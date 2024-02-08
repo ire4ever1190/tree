@@ -1,5 +1,9 @@
-import std/sets
+when defined(js):
+  import jsset
+else:
+  import std/sets
 import macros
+import std/hashes
 
 
 type
@@ -7,55 +11,102 @@ type
   Setter[T] = proc (newVal: T)
   Signal[T] = tuple[get: Accessor[T], set: Setter[T]]
 
-var listeners: seq[proc ()] = @[]
+  Callback = proc ()
+
+  Observer = ref object of RootObj
+    parent: Observer
+    cleanups: seq[Callback]
+    listeners: seq[Callback]
+
+  Computation = ref object of Observer
+    fn: Callback
+
+proc hash(x: Observer): Hash =
+  result = hash(cast[int](x.addr))
+
+var observer: Observer = Observer()
+
+proc initRoot(body: Callback) =
+  let prev = observer
+  body()
+  observer = prev
+
+proc initComputation(body: Callback) =
+  let prev = observer
+  observer = Computation(fn: body)
+  body()
+  observer = prev
+
+proc run(x: Computation) =
+  for cleanup in x.cleanups:
+    cleanup()
+  x.fn()
 
 template staticSignal[T](val: T): Accessor[T] =
   proc fakeGet(): T {.nimcall.} = val
   fakeGet
 
 proc createSignal[T](init: T): Signal[T] =
-  var subscribers = initHashSet[proc ()]()
+  var subscribers = when defined(js): newJSSet[Computation]() else: initHashSet[Computation]()
 
   var value = init
   let read = proc (): T =
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
-    if listeners.len > 0:
-      subscribers.incl listeners[^1]
+    if observer != nil and observer of Computation:
+      subscribers.incl Computation(observer)
     value
 
   let write = proc (newVal: T) =
     value = newVal
     # Run every context that is subscribed
     for subscriber in subscribers:
-      subscriber()
+      subscriber.run()
 
   return (read, write)
 
-
 proc createEffect(callback: proc ()) =
-  listeners &= callback
-  callback()
-  discard listeners.pop()
+  initComputation(callback)
 
-proc createMemo[T](callback: proc (): T): (proc (): T) =
+proc createMemo[T](callback: Accessor[T]): Accessor[T] =
   let (getVal, setVal) = createSignal(default(T))
   createEffect() do ():
     setVal(callback())
   result = getVal
 
-import strformat, htmlgen
+proc onCleanup(x: Callback) =
+  observer.cleanups &= x
 
-type
-  Node = ref object
-    html: string
-    count: Signal[int]
+# import std/dom
 
-proc foo(x: Accessor[int]) =
-  echo x()
 
-let (count, setCount) = createSignal(9)
-foo(staticSignal(9))
-foo(count)
+# proc counter(): Element =
+#   let (count, setCount) = createSignal(0)
+#
+#   let btn = document.createElement("button")
+#
+#   btn.onclick = proc (e: Event) =
+#     setCount(count() + 1)
+#
+#   createEffect do ():
+#     btn.innerText = cstring($count())
+#
+#   return btn
+#
+# document.body.appendChild(counter())
 
+
+let (count, setCount) = createSignal(0)
+
+let countSquared = createMemo do () -> int:
+  echo "Recomputing"
+  onCleanup do ():
+    echo "Cleaning up"
+  count() * count()
+
+echo countSquared()
+setCount(9)
+echo countSquared()
+echo countSquared()
+echo countSquared()
 
