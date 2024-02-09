@@ -14,12 +14,12 @@ proc initNativeSet[T](): NativeSet[T] =
   else: initHashSet[T]()
 
 type
+  ReadSignal* = object
+    ## Effect to show that a proc reads a signal
   Accessor[T] = proc (): T
   Setter[T] = proc (newVal: T)
   Signal[T] = tuple[get: Accessor[T], set: Setter[T]]
 
-  Reactive = object
-    ## Tag used to tell if a proc uses any reactivity
 
   Callback = proc ()
 
@@ -69,7 +69,7 @@ proc createSignal*[T](init: T): Signal[T] =
   var subscribers = initNativeSet[Computation]()
 
   var value = init
-  let read = proc (): T =
+  let read = proc (): T {.tags: [ReadSignal].}=
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
     if observer != nil and observer of Computation:
