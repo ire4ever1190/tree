@@ -18,6 +18,9 @@ type
   Setter[T] = proc (newVal: T)
   Signal[T] = tuple[get: Accessor[T], set: Setter[T]]
 
+  Reactive = object
+    ## Tag used to tell if a proc uses any reactivity
+
   Callback = proc ()
 
   Observer = ref object of RootObj
@@ -30,7 +33,7 @@ type
   Computation = ref object of Observer
     fn: Callback
 
-proc hash(x: Observer): Hash =
+proc hash*(x: Observer): Hash =
   result = hash(cast[int](x.addr))
 
 var observer: Observer = Observer(children: initNativeSet[Observer]())
@@ -62,7 +65,7 @@ template staticSignal[T](val: T): Accessor[T] =
   proc fakeGet(): T {.nimcall.} = val
   fakeGet
 
-proc createSignal[T](init: T): Signal[T] =
+proc createSignal*[T](init: T): Signal[T] =
   var subscribers = initNativeSet[Computation]()
 
   var value = init
@@ -82,16 +85,16 @@ proc createSignal[T](init: T): Signal[T] =
 
   return (read, write)
 
-proc createEffect(callback: proc ()) =
+proc createEffect*(callback: proc ()) =
   initComputation(callback)
 
-proc createMemo[T](callback: Accessor[T]): Accessor[T] =
+proc createMemo*[T](callback: Accessor[T]): Accessor[T] =
   let (getVal, setVal) = createSignal(default(T))
   createEffect() do ():
     setVal(callback())
   result = getVal
 
-proc onCleanup(x: Callback) =
+proc onCleanup*(x: Callback) =
   observer.cleanups &= x
 
 when defined(js):
@@ -147,5 +150,6 @@ when defined(js):
 
   document.body.insert(app())
 
+export sets
 
 
