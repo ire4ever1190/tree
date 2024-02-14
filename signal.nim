@@ -16,7 +16,7 @@ proc initNativeSet[T](): NativeSet[T] =
 type
   ReadSignal* = object
     ## Effect to show that a proc reads a signal
-  Accessor[T] = proc (): T
+  Accessor*[T] = proc (): T
   Setter[T] = proc (newVal: T)
   Signal[T] = tuple[get: Accessor[T], set: Setter[T]]
 
@@ -84,6 +84,9 @@ proc createSignal*[T](init: T): Signal[T] =
       subscriber.run()
 
   return (read, write)
+
+proc inc*[T: SomeInteger](signal: Signal[T], amount: T = 1) =
+  signal.set(signal.get() + amount)
 
 proc createEffect*(callback: proc ()) =
   initComputation(callback)
