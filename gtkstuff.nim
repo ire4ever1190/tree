@@ -56,7 +56,8 @@ proc replace[T](box: BoxWidget, new, old: T) =
   ## after the old one and then remove the old one. Shitty
   ## since it means we are looping through the widgets twice
   let widget = box.GtkWidget
-  widget.gtkBoxInsertChildAfter(new, old)
+  if new.pointer != nil:
+    widget.gtkBoxInsertChildAfter(new, old)
   widget.gtkBoxRemove(old)
 
 proc replace[T](box: WindowWidget, new, old: T) =
@@ -102,7 +103,7 @@ proc registerEvent(widget: GtkWidget, name: cstring, callback: proc ()) =
 
   onCleanup do ():
     # Unregister the handler, and let GC handle the closure
-    widget.pointer.gSignalHandlerDisconnect(id)
+    # widget.pointer.gSignalHandlerDisconnect(id)
     GCUnref(data)
 
 
@@ -119,7 +120,7 @@ proc processGUI(x: NimNode): NimNode =
   let widgetName = genSym(nskLet, "widget")
   result = newStmtList()
   # Start the widget creation
-  result &= newLetStmt(widgetName, init)
+  result &= newLetStmt(widgetName, newCall(ident"initRoot", newProc(params=[ident"auto"], body=init)))
   if x[^1].kind == nnkStmtList:
     # Create children and register any events
     for child in x[^1]:
@@ -148,12 +149,13 @@ proc processGUI(x: NimNode): NimNode =
         # We also need to make sure that each body gets processed
         let ifStmt = nnkIfStmt.newTree()
         for branch in child:
-          branch[^1] = branch[^1][0].processGUI()
+          let rootCall = newCall(ident"initRoot", newProc(params=[ident"GtkWidget"], body=branch[^1][0].processGUI()), newLit"Some root")
+          branch[^1] = rootCall
           ifStmt &= branch
         # Make sure its an expression
         if ifStmt[^1].kind != nnkElse:
           ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newProc(params=[ident"GtkWidget"],body=ifStmt), "GtkWidget".newCall(newNilLit())))
+        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newCall("createMemo", newProc(params=[ident"GtkWidget"],body=ifStmt)), "GtkWidget".newCall(newNilLit())))
       else:
         "Unknown node".error(child)
   # Return the child

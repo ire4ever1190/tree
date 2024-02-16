@@ -27,39 +27,50 @@ type
     parent: Observer
     cleanups: seq[Callback]
     listeners: seq[Callback]
-    children: NativeSet[Observer]
+    children*: NativeSet[Observer]
       ## Children observers so that we can call dispose and clear everything
-
+    name: string
+      ## Used for debugging
   Computation = ref object of Observer
     fn: Callback
 
 proc hash*(x: Observer): Hash =
-  result = hash(cast[int](x.addr))
+  result = hash(cast[pointer](x))
 
-var observer: Observer = Observer(children: initNativeSet[Observer]())
+var observer* = Observer(children: initNativeSet[Observer]())
 
-proc initRoot(body: Callback) =
-  let prev = observer
-  body()
+
+template observStack(name: string, body: untyped) =
+  let prev {.inject.} = observer
+  body
   observer = prev
+
+proc initRoot*[T](body: Accessor[T], name = ""): T =
+  observStack(name):
+    observer = Observer(parent: prev, children: initNativeSet[Observer](), name: name)
+    prev.children.incl observer
+    result = body()
 
 proc dispose(body: Observer) =
   for child in body.children:
     dispose child
+  body.children.clear()
 
   for cleanup in body.cleanups:
     cleanup()
 
-proc initComputation(body: Callback) =
-  let prev = observer
-  observer = Computation(fn: body, children: initNativeSet[Observer]())
-  prev.children.incl observer
-  body()
-  observer = prev
+proc initComputation(body: Callback, name = "") =
+  observStack(name):
+    observer = Computation(fn: body, children: initNativeSet[Observer]())
+    prev.children.incl observer
+    body()
 
 proc run(x: Computation) =
   x.dispose()
-  x.fn()
+  observStack "":
+    observer = x
+    x.fn()
+
 
 template staticSignal[T](val: T): Accessor[T] =
   proc fakeGet(): T {.nimcall.} = val
