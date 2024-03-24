@@ -51,14 +51,19 @@ proc add[T](box: BoxWidget, widget: T) =
 proc add[T](window: WindowWidget, widget: T) =
   gtk_window_set_child(window.GtkWidget, widget.GtkWidget)
 
+proc addAfter[T](box: BoxWidget, widget, after: T) =
+  gtkBoxInsertChildAfter(box.GtkWidget, widget.GtkWidget, after.GtkWidget)
+
+proc remove[T](box: BoxWidget, child: T) =
+  box.GtkWidget.gtkBoxRemove(child)
+
 proc replace[T](box: BoxWidget, new, old: T) =
   ## Shitty replace function. Basically append the new widget
   ## after the old one and then remove the old one. Shitty
   ## since it means we are looping through the widgets twice
-  let widget = box.GtkWidget
   if new.pointer != nil:
-    widget.gtkBoxInsertChildAfter(new, old)
-  widget.gtkBoxRemove(old)
+    box.addAfter(new, old)
+  box.remove(old)
 
 proc replace[T](box: WindowWidget, new, old: T) =
   box.add(new)
@@ -69,6 +74,14 @@ proc insert[T: not proc](box: BoxWidget | WindowWidget, value, current: T): T =
   else:
     box.replace(value, current)
   result = value
+
+proc insert[T](box: BoxWidget | WindowWidget, value, current: seq[T], marker = GtkWidget(nil)): seq[T] =
+  # TODO: Add reconcilation via keys
+  for old in current:
+    box.remove(old)
+  for new in value:
+    box.add(new)
+    result &= new
 
 proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T): Accessor[T] =
   var current = current
@@ -103,9 +116,19 @@ proc registerEvent(widget: GtkWidget, name: cstring, callback: proc ()) =
 
   onCleanup do ():
     # Unregister the handler, and let GC handle the closure
-    # widget.pointer.gSignalHandlerDisconnect(id)
+    widget.pointer.gSignalHandlerDisconnect(id)
     GCUnref(data)
 
+proc toWidget(x: NimNode): NimNode = newCall(ident"GtkWidget", x)
+
+proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
+  newProc(
+    params=[returnType],
+    body=body
+  )
+
+# TODO: Do a two stage process like owlkettle. Should simplify the DSL from actual GUI construction
+# and mean that its easier to add other renderers (Like HTML)
 
 proc processGUI(x: NimNode): NimNode =
   x.expectKind(nnkCall)
@@ -117,24 +140,25 @@ proc processGUI(x: NimNode): NimNode =
     if arg.kind == nnkStmtList: break # This is the child
     init &= arg
 
-  let widgetName = genSym(nskLet, "widget")
+  let
+    widgetName = genSym(nskLet, "widget")
+    nilWidget = newNilLit().toWidget()
   result = newStmtList()
   # Start the widget creation
   result &= newLetStmt(widgetName, newCall(ident"initRoot", newProc(params=[ident"auto"], body=init)))
   if x[^1].kind == nnkStmtList:
     # Create children and register any events
     for child in x[^1]:
-      echo child.kind
       case child.kind
       of nnkProcDef:
         # Register event for procs
         let signalName = child.name.strVal
-        result &= newCall(ident"registerEvent", newCall("GtkWidget", widgetName), newLit signalName, newProc(body=child.body))
+        result &= newCall(ident"registerEvent", widgetName.toWidget(), newLit signalName, newProc(body=child.body))
       of nnkCall:
         # Create child if its a call
         let childName = genSym(nskLet, "child")
         result &= newLetStmt(childName, processGUI(child))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newCall("GtkWidget", childName), "GtkWidget".newCall(newNilLit())))
+        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, childName.toWidget(), nilWidget))
       of nnkAsgn:
         # Set a reactive property
         # TODO: Find better way of dealing with nonreactive/reactive and allow both
@@ -149,13 +173,17 @@ proc processGUI(x: NimNode): NimNode =
         # We also need to make sure that each body gets processed
         let ifStmt = nnkIfStmt.newTree()
         for branch in child:
-          let rootCall = newCall(ident"initRoot", newProc(params=[ident"GtkWidget"], body=branch[^1][0].processGUI()), newLit"Some root")
+          let rootCall = newCall(ident"initRoot", accessorProc(branch[^1][0].processGUI(), ident"GtkWidget"))
           branch[^1] = rootCall
           ifStmt &= branch
         # Make sure its an expression
         if ifStmt[^1].kind != nnkElse:
           ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newCall("createMemo", newProc(params=[ident"GtkWidget"],body=ifStmt)), "GtkWidget".newCall(newNilLit())))
+        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newCall("createMemo", accessorProc(ifStmt, ident"GtkWidget")), nilWidget))
+      of nnkForStmt:
+        # Convert into
+        discard
+
       else:
         "Unknown node".error(child)
   # Return the child
@@ -187,6 +215,8 @@ proc App(): GtkWidget =
     Window:
       defaultSize = (200, 200)
       Box(Vertical, 10):
+        # for i in 0..10:
+        #   Label($i)
         Button(text="Show/hide"):
           proc clicked() =
             setShow(not show())

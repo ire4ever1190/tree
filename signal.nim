@@ -88,6 +88,9 @@ proc createSignal*[T](init: T): Signal[T] =
     value
 
   let write = proc (newVal: T) =
+    # Do nothing if they are the same
+    when compiles(newVal == value):
+      if newVal == value: return
     value = newVal
     # Run every context that is subscribed
     let old = subscribers
