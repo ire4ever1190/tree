@@ -69,24 +69,34 @@ proc replace[T](box: WindowWidget, new, old: T) =
   box.add(new)
 
 proc insert[T: not proc](box: BoxWidget | WindowWidget, value, current: T): T =
+  ## Inserts a single widget. Replaces the old widget if possible
   if current.pointer == nil:
     box.add(value)
   else:
     box.replace(value, current)
   result = value
 
-proc insert[T](box: BoxWidget | WindowWidget, value, current: seq[T], marker = GtkWidget(nil)): seq[T] =
+proc insert[T](box: BoxWidget | WindowWidget, value, current: seq[T], marker: GtkWidget): seq[T] =
+  ## Inserts a list of widgets.
+  ## Inserts them after `marker`
   # TODO: Add reconcilation via keys
   for old in current:
     box.remove(old)
+  var sibling = marker
   for new in value:
-    box.add(new)
+    box.addAfter(new, sibling)
+    sibling = new
     result &= new
 
-proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T): Accessor[T] =
+proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, prev: Accessor[GtkWidget]): Accessor[T] =
+  ## Top level insert that every widget gets called with.
+  ## This handle reinserting the widget if it gets updated
   var current = current
   createEffect do ():
-    current = box.insert(value(), current)
+    when T is seq:
+      current = box.insert(value(), current, prev())
+    else:
+      current = box.insert(value(), current)
 
   return proc (): T = current
 
@@ -127,6 +137,11 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
     body=body
   )
 
+proc wrapMemo(x: NimNode): NimNode =
+  newCall("createMemo", if x.kind == nnkProcDef: x else: accessorProc(x))
+
+type WidgetMemo = Accessor[GtkWidget]
+
 # TODO: Do a two stage process like owlkettle. Should simplify the DSL from actual GUI construction
 # and mean that its easier to add other renderers (Like HTML)
 
@@ -143,9 +158,12 @@ proc processGUI(x: NimNode): NimNode =
   let
     widgetName = genSym(nskLet, "widget")
     nilWidget = newNilLit().toWidget()
+    lastWidget = genSym(nskVar, "lastWidget")
+    updateLast = proc (x: NimNode): NimNode = nnkAsgn.newTree(lastWidget, wrapMemo(x))
   result = newStmtList()
   # Start the widget creation
   result &= newLetStmt(widgetName, newCall(ident"initRoot", newProc(params=[ident"auto"], body=init)))
+  result &= newVarStmt(lastWidget, wrapMemo(nilWidget))
   if x[^1].kind == nnkStmtList:
     # Create children and register any events
     for child in x[^1]:
@@ -158,7 +176,7 @@ proc processGUI(x: NimNode): NimNode =
         # Create child if its a call
         let childName = genSym(nskLet, "child")
         result &= newLetStmt(childName, processGUI(child))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, childName.toWidget(), nilWidget))
+        result &= updateLast(newCall(ident"insert", widgetName, childName.toWidget(), nilWidget))
       of nnkAsgn:
         # Set a reactive property
         # TODO: Find better way of dealing with nonreactive/reactive and allow both
@@ -179,10 +197,16 @@ proc processGUI(x: NimNode): NimNode =
         # Make sure its an expression
         if ifStmt[^1].kind != nnkElse:
           ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, newCall("createMemo", accessorProc(ifStmt, ident"GtkWidget")), nilWidget))
+        result &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widgetName, wrapMemo(accessorProc(ifStmt, ident"GtkWidget")), nilWidget))
       of nnkForStmt:
-        # Convert into
-        discard
+        # First build list of nodes
+        var list = genSym(nskVar, "list")
+        # Initialise the list
+        result &= newVarStmt(list, newCall(nnkBracketExpr.newTree(ident"newSeq", ident"GtkWidget")))
+        # Now make the loop add each item into the list
+        let addToListLoop = child.copy()
+        addToListLoop[^1] = newStmtList(newCall("add", list, "GtkWidget".newCall(processGUI(addToListLoop[^1][0]))))
+        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, addToListLoop, lastWidget))
 
       else:
         "Unknown node".error(child)
@@ -195,33 +219,63 @@ macro gui(body: untyped): GtkWidget =
   echo widget.toStrLit
   newCall(ident"GtkWidget", widget)
 
+when false:
+  proc Counter(): GtkWidget =
+    onCleanup do ():
+      echo "Cleaning widget"
 
-proc Counter(): GtkWidget =
-  onCleanup do ():
-    echo "Cleaning widget"
-
-  let (count, setCount) = createSignal(0)
-  return gui:
-    Box(Vertical, 0):
-      Button(text="Click me"):
-        proc clicked() =
-          setCount(count() + 1)
-      Label():
-        text = fmt"Count is {count()}"
-
-proc App(): GtkWidget =
-  let (show, setShow) = createSignal(true)
-  return gui:
-    Window:
-      defaultSize = (200, 200)
-      Box(Vertical, 10):
-        # for i in 0..10:
-        #   Label($i)
-        Button(text="Show/hide"):
+    let (count, setCount) = createSignal(0)
+    return gui:
+      Box(Vertical, 0):
+        Button(text="Click me"):
           proc clicked() =
-            setShow(not show())
-        if show():
-          Counter()
+            setCount(count() + 1)
+        Label():
+          text = fmt"Count is {count()}"
+        for i in 0..<count():
+          Label():
+            text = "test"
+
+  proc App(): GtkWidget =
+    let (show, setShow) = createSignal(true)
+    return gui:
+      Window:
+        defaultSize = (200, 200)
+        Box(Vertical, 10):
+          Button(text="Show/hide"):
+            proc clicked() =
+              setShow(not show())
+          if show():
+            Counter()
+else:
+  proc App(): GtkWidget =
+    let (count, setCount) = createSignal(0)
+    let window = Window()
+    window.defaultSize = (200, 200)
+    # Button to increment
+    let btn = createMemo do () -> GtkWidget:
+      Button(text="+1").GtkWidget
+
+    let btnDev = createMemo do () -> GtkWidget:
+      Button(text="-1").GtkWidget
+
+    btn().registerEvent("clicked") do ():
+      setCount(count() + 1)
+
+    btnDev().registerEvent("clicked") do ():
+      setCount(max(count() - 1, 0))
+    # Label to show it
+    let labels = createMemo do () -> seq[GtkWidget]:
+      for i in 0..<count():
+        result &= Label(cstring($i)).GtkWidget
+
+    # Box to hold everything
+    let box = Box(Vertical)
+    discard box.insert(btnDev, GtkWidget(nil), nil)
+    discard box.insert(btn, GtkWidget(nil), nil)
+    discard box.insert(labels, @[], btn)
+    window &= box
+    return window.GtkWidget
 
 proc render(app: GApplication, window: GtkWidget) =
   gtk_window_present(window);
