@@ -88,9 +88,10 @@ proc insert[T](box: BoxWidget | WindowWidget, value, current: seq[T], marker: Gt
     sibling = new
     result &= new
 
-proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, prev: Accessor[GtkWidget]): Accessor[T] =
+proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, prev: Accessor[GtkWidget] = nil): Accessor[GtkWidget] =
   ## Top level insert that every widget gets called with.
-  ## This handle reinserting the widget if it gets updated
+  ## This handle reinserting the widget if it gets updated.
+  ## Always returns a GtkWidget. For lists this returns the item at the end
   var current = current
   createEffect do ():
     when T is seq:
@@ -98,7 +99,11 @@ proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, pr
     else:
       current = box.insert(value(), current)
 
-  return proc (): T = current
+  return proc (): GtkWidget =
+    when T is seq:
+      current[^1]
+    else:
+      current
 
 macro generateProcType(x: typedesc): type =
   let tupleType = x.getTypeImpl()[1]
@@ -200,13 +205,12 @@ proc processGUI(x: NimNode): NimNode =
         result &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widgetName, wrapMemo(accessorProc(ifStmt, ident"GtkWidget")), nilWidget))
       of nnkForStmt:
         # First build list of nodes
-        var list = genSym(nskVar, "list")
         # Initialise the list
-        result &= newVarStmt(list, newCall(nnkBracketExpr.newTree(ident"newSeq", ident"GtkWidget")))
         # Now make the loop add each item into the list
         let addToListLoop = child.copy()
-        addToListLoop[^1] = newStmtList(newCall("add", list, "GtkWidget".newCall(processGUI(addToListLoop[^1][0]))))
-        result &= nnkDiscardStmt.newTree(newCall(ident"insert", widgetName, addToListLoop, lastWidget))
+        addToListLoop[^1] = newStmtList(newCall("add", ident"result", "GtkWidget".newCall(processGUI(addToListLoop[^1][0]))))
+        let emptySeq =   nnkPrefix.newTree(newIdentNode("@"), nnkBracket.newTree())
+        result &= nnkAsgn.newTree(lastWidget, (newCall(ident"insert", widgetName, addToListLoop.accessorProc(nnkBracketExpr.newTree(ident"seq", ident"GtkWidget")).wrapMemo(), emptySeq, lastWidget)))
 
       else:
         "Unknown node".error(child)
@@ -219,7 +223,7 @@ macro gui(body: untyped): GtkWidget =
   echo widget.toStrLit
   newCall(ident"GtkWidget", widget)
 
-when false:
+when true:
   proc Counter(): GtkWidget =
     onCleanup do ():
       echo "Cleaning widget"
@@ -254,16 +258,15 @@ else:
     window.defaultSize = (200, 200)
     # Button to increment
     let btn = createMemo do () -> GtkWidget:
-      Button(text="+1").GtkWidget
+      result = Button(text="+1").GtkWidget
+      result.registerEvent("clicked") do ():
+        setCount(max(count() - 1, 0))
 
     let btnDev = createMemo do () -> GtkWidget:
-      Button(text="-1").GtkWidget
+      result = Button(text="-1").GtkWidget
+      result.registerEvent("clicked") do ():
+        setCount(count() + 1)
 
-    btn().registerEvent("clicked") do ():
-      setCount(count() + 1)
-
-    btnDev().registerEvent("clicked") do ():
-      setCount(max(count() - 1, 0))
     # Label to show it
     let labels = createMemo do () -> seq[GtkWidget]:
       for i in 0..<count():
