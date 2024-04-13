@@ -65,6 +65,9 @@ proc dispose(body: Observer) =
   # Now we can run our own cleanups
   for cleanup in body.cleanups:
     cleanup()
+  # Cleanups will get registered when the observer is called again.
+  # So reset the list so cleanups dont hang aroudn
+  body.cleanups.setLen(0)
 
 proc initComputation(body: Callback, name = "") =
   ## Create a computation which is an effect that reruns everytime

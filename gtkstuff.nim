@@ -238,7 +238,7 @@ proc processNode(x: NimNode): NimNode =
 proc processIf(x: NimNode): NimNode =
   let ifStmt = nnkIfStmt.newTree()
   for branch in x:
-    let rootCall = newCall(ident"initRoot", accessorProc(branch[^1][0].processComp(), ident"GtkWidget"))
+    let rootCall = branch[^1][0].processNode()
     branch[^1] = rootCall
     ifStmt &= branch
   # Make sure its an expression
@@ -290,7 +290,6 @@ proc processComp(x: NimNode): NimNode =
   for child in children:
     let body = child.processNode().wrapMemo(ident"GtkWidget")
     compGen &= nnkDiscardStmt.newTree newCall(ident"insert", widget, body, nilWidget)
-
 
   compGen &= rawWidget
   result = compGen
@@ -401,17 +400,25 @@ when false:
             Counter()
 
 
+proc Test(): GtkWidget =
+  onCleanup do ():
+    echo "Cleaning"
+  return gui:
+    Label("Hello")
 
 proc App(): GtkWidget =
-  let (count, setCount) = createSignal(0)
+  let (show, setShow) = createSignal(false)
 
   return gui:
     Window:
       defaultSize = (200, 200)
-      Button():
-        proc clicked() =
-          setCount(count() + 1)
-        text = $count()
+      Box(Vertical, 10):
+        Button():
+          proc clicked() =
+            setShow(not show())
+          text = "Show/Hide"
+        if show():
+          Test()
 
 proc render(app: GApplication, window: GtkWidget) =
   gtk_window_present(window);
