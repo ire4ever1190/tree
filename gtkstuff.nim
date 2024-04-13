@@ -1,12 +1,23 @@
 import owlkettle/bindings/[adw, gtk]
 import std/[macros, strformat]
 import signal
+import asyncdispatch
 
 {.push importc, cdecl.}
 proc gtk_button_set_label(button: GtkWidget, label: cstring)
+proc g_timeout_add(interval: cuint, function: proc (): bool {.cdecl.}, data: pointer)
 {.pop.}
 
+
+
 let app = gtk_application_new(cstring"dev.leahy.example", G_APPLICATION_FLAGS_NONE);
+
+proc callDispatcher(): bool {.cdecl.} =
+  if hasPendingOperations():
+    poll(0)
+  return true
+
+g_timeout_add(400.cuint, callDispatcher, nil)
 
 type
   ClosureProc = ref object
@@ -27,6 +38,8 @@ proc Button(text: cstring = ""): BtnWidget =
     gtk_button_new_with_label(text).BtnWidget
   else:
     gtk_button_new().BtnWidget
+proc `text=`(btn: BtnWidget, text: string) =
+  gtk_button_set_label(btn.GtkWidget, text.cstring)
 
 proc Box(orient: Orientation, spacing: cint = 0): BoxWidget =
   const mapping: array[Orientation, GtkOrientation] = [GTK_ORIENTATION_VERTICAL, GTK_ORIENTATION_HORIZONTAL]
@@ -142,13 +155,145 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
     body=body
   )
 
-proc wrapMemo(x: NimNode): NimNode =
-  newCall("createMemo", if x.kind == nnkProcDef: x else: accessorProc(x))
+proc wrapMemo(x: NimNode, returnType = ident"auto"): NimNode =
+  newCall("createMemo", if x.kind == nnkProcDef: x else: accessorProc(x, returnType))
 
 type WidgetMemo = Accessor[GtkWidget]
 
+template nilWidget(): NimNode = newCall(ident"GtkWidget", newNilLit())
+
 # TODO: Do a two stage process like owlkettle. Should simplify the DSL from actual GUI construction
 # and mean that its easier to add other renderers (Like HTML)
+
+#[
+
+Rewrites that need to get done. Memoisation is handled by the site that constructs the widget
+
+Components
+==========
+
+```
+Button(foo):
+  bar = "test"
+```
+into
+```
+let elem = block:
+  let e = Button(foo) # Args are passed
+  # Properties are rewritten into effects
+  createEffect do ():
+    e.bar = "test"
+```
+
+If Expressions
+==============
+
+```
+if something():
+  Foo()
+elif somethingElse():
+  Bar()
+```
+into
+```
+let elem = block:
+  if something():
+    # Build Foo component
+  elif somethingElse():
+    # Build Bar component
+  else:
+    GtkWidget(nil) # We always need to return something
+```
+
+For Loops
+=========
+
+```
+for i in 0..<count():
+  Foo()
+```
+into
+```
+let items = block:
+  var result: seq[GtkWidget]
+  for i in 0..<count():
+    result &= # Build Foo
+  result
+
+]#
+
+proc processComp(x: NimNode): NimNode
+proc processIf(x: NimNode): NimNode
+
+proc processNode(x: NimNode): NimNode =
+  case x.kind
+  of nnkIfStmt:
+    x.processIf()
+  of nnkCall:
+    x.processComp()
+  else:
+    "Unexpected statement".error(x)
+
+
+proc processIf(x: NimNode): NimNode =
+  let ifStmt = nnkIfStmt.newTree()
+  for branch in x:
+    let rootCall = newCall(ident"initRoot", accessorProc(branch[^1][0].processComp(), ident"GtkWidget"))
+    branch[^1] = rootCall
+    ifStmt &= branch
+  # Make sure its an expression
+  if ifStmt[^1].kind != nnkElse:
+    ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
+  result = ifStmt
+
+proc processComp(x: NimNode): NimNode =
+  x.expectKind(nnkCall)
+  # Generate the inital call
+  let init = newCall(x[0])
+  # Pass args
+  for arg in x[1..^1]:
+    if arg.kind == nnkStmtList: break # This is the child
+    init &= arg
+  # Node that will return the component
+  let
+    widget = ident"widget"
+    rawWidget = newCall("GtkWidget", widget)
+    compGen = newStmtList(newLetStmt(widget, init)) # TODO: Wrap in blockstmt
+  # Now look through the children to find extra properties/event handlers.
+  # Also store the nodes that we need to process after
+  var
+    children: seq[NimNode] # Child nodes to create after
+    events: seq[tuple[name: string, handler: NimNode]]
+  if x[^1].kind == nnkStmtList:
+    for child in x[^1]:
+      case child.kind
+      of nnkProcDef: # Event handler
+        let signalName = child.name.strVal.newLit()
+        compGen &= newCall(ident"registerEvent", rawWidget, signalName, newProc(body=child.body))
+      of nnkAsgn: # Extra property
+        # In future, this would just get added to the call
+        let field = newDotExpr(widget, child[0])
+        let effectBody = nnkAsgn.newTree(field, child[1])
+        # Wrap the assignment in a createEffect
+        compGen &= newCall(ident"createEffect", newProc(body=effectBody))
+      of nnkIfStmt, nnkForStmt, nnkCall: # Other supported nodes
+        children &= child
+      else:
+        discard processNode(child)
+
+  # Process any children that need to get added
+  let
+    # We need to store the last widget seen has a "marker" for
+    # loops so that they know where to start inserting items
+    lastWidget = ident"lastWidget"
+  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"WidgetMemo", newEmptyNode()))
+  for child in children:
+    let body = child.processNode().wrapMemo(ident"GtkWidget")
+    compGen &= nnkDiscardStmt.newTree newCall(ident"insert", widget, body, nilWidget)
+
+
+  compGen &= rawWidget
+  result = compGen
 
 proc processGUI(x: NimNode): NimNode =
   x.expectKind(nnkCall)
@@ -219,14 +364,20 @@ proc processGUI(x: NimNode): NimNode =
 
 
 macro gui(body: untyped): GtkWidget =
-  let widget = processGUI(body[0])
+  let widget = processNode(body[0])
   echo widget.toStrLit
   newCall(ident"GtkWidget", widget)
 
-when true:
-  proc Counter(): GtkWidget =
+when false:
+  proc Buggon(i: int): GtkWidget =
     onCleanup do ():
-      echo "Cleaning widget"
+      echo "Cleaning buggy"
+    result = gui:
+      Label($i)
+
+
+  proc Counter(): GtkWidget =
+    var (text, setText) = createSignal("Nothing")
 
     let (count, setCount) = createSignal(0)
     return gui:
@@ -234,11 +385,8 @@ when true:
         Button(text="Click me"):
           proc clicked() =
             setCount(count() + 1)
-        Label():
-          text = fmt"Count is {count()}"
         for i in 0..<count():
-          Label():
-            text = "test"
+          Buggon(i)
 
   proc App(): GtkWidget =
     let (show, setShow) = createSignal(true)
@@ -251,34 +399,19 @@ when true:
               setShow(not show())
           if show():
             Counter()
-else:
-  proc App(): GtkWidget =
-    let (count, setCount) = createSignal(0)
-    let window = Window()
-    window.defaultSize = (200, 200)
-    # Button to increment
-    let btn = createMemo do () -> GtkWidget:
-      result = Button(text="+1").GtkWidget
-      result.registerEvent("clicked") do ():
-        setCount(max(count() - 1, 0))
 
-    let btnDev = createMemo do () -> GtkWidget:
-      result = Button(text="-1").GtkWidget
-      result.registerEvent("clicked") do ():
-        setCount(count() + 1)
 
-    # Label to show it
-    let labels = createMemo do () -> seq[GtkWidget]:
-      for i in 0..<count():
-        result &= Label(cstring($i)).GtkWidget
 
-    # Box to hold everything
-    let box = Box(Vertical)
-    discard box.insert(btnDev, GtkWidget(nil), nil)
-    discard box.insert(btn, GtkWidget(nil), nil)
-    discard box.insert(labels, @[], btn)
-    window &= box
-    return window.GtkWidget
+proc App(): GtkWidget =
+  let (count, setCount) = createSignal(0)
+
+  return gui:
+    Window:
+      defaultSize = (200, 200)
+      Button():
+        proc clicked() =
+          setCount(count() + 1)
+        text = $count()
 
 proc render(app: GApplication, window: GtkWidget) =
   gtk_window_present(window);
