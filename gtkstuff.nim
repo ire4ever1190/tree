@@ -59,7 +59,8 @@ proc `text=`(label: LblWidget, text: string) = gtk_label_set_text(label.GtkWidge
 
 
 proc add[T](box: BoxWidget, widget: T) =
-  gtk_box_append(box.GtkWidget, widget.GtkWidget)
+  if widget.pointer != nil:
+    gtk_box_append(box.GtkWidget, widget.GtkWidget)
 
 proc add[T](window: WindowWidget, widget: T) =
   gtk_window_set_child(window.GtkWidget, widget.GtkWidget)
@@ -101,7 +102,7 @@ proc insert[T](box: BoxWidget | WindowWidget, value, current: seq[T], marker: Gt
     sibling = new
     result &= new
 
-proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, prev: Accessor[GtkWidget] = nil): Accessor[GtkWidget] =
+proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T = default(T), prev: Accessor[GtkWidget] = nil): Accessor[GtkWidget] =
   ## Top level insert that every widget gets called with.
   ## This handle reinserting the widget if it gets updated.
   ## Always returns a GtkWidget. For lists this returns the item at the end
@@ -118,31 +119,18 @@ proc insert[T](box: BoxWidget | WindowWidget, value: Accessor[T], current: T, pr
     else:
       current
 
-macro generateProcType(x: typedesc): type =
-  let tupleType = x.getTypeImpl()[1]
-  echo tupleType.treeRepr
-  var params = nnkFormalParams.newTree()
-  params &= newEmptyNode()
-  for field in tupleType:
-    params &= newIdentDefs(ident $field[0], ident $field[1])
-  # Add the env variable
-  params &= newIdentDefs(ident "env", ident "pointer")
-  result = nnkProcTy.newTree(params, nnkPragma.newTree(ident"nimcall"))
-
-proc callClosure[T](widget: pointer, data: ClosureProc) {.cdecl.} =
-  let info = cast[ClosureProc](data)
-  cast[T.generateProcType()](info.prc)(info.env)
-
-proc wrapClosure(prc: proc): ClosureProc =
-  ClosureProc(prc: cast[ClosureProc.prc](prc.rawProc()), env: prc.rawEnv())
+proc callIt(widget, data: pointer) {.cdecl.} =
+  let prc = cast[ref proc ()](data)
+  prc[]()
 
 proc registerEvent(widget: GtkWidget, name: cstring, callback: proc ()) =
-  let data = wrapClosure(callback)
+  let data = new typeof(callback)
   GCRef(data)
-  let callback = callClosure[tuple[]]
-  let id = widget.gSignalConnect(name, callback, cast[pointer](data))
+  data[] = callback
+  let id = widget.gSignalConnect(name, callIt, cast[pointer](data))
 
   onCleanup do ():
+    echo "Cleaning"
     # Unregister the handler, and let GC handle the closure
     widget.pointer.gSignalHandlerDisconnect(id)
     GCUnref(data)
@@ -224,6 +212,7 @@ let items = block:
 
 proc processComp(x: NimNode): NimNode
 proc processIf(x: NimNode): NimNode
+proc processLoop(x: NimNode): NimNode
 
 proc processNode(x: NimNode): NimNode =
   case x.kind
@@ -231,6 +220,8 @@ proc processNode(x: NimNode): NimNode =
     x.processIf()
   of nnkCall:
     x.processComp()
+  of nnkForStmt, nnkWhileStmt:
+    x.processLoop()
   else:
     "Unexpected statement".error(x)
 
@@ -245,6 +236,24 @@ proc processIf(x: NimNode): NimNode =
   if ifStmt[^1].kind != nnkElse:
     ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
   result = ifStmt
+
+proc tryAdd(items: var seq[GtkWidget], widget: GtkWidget) =
+  ## Only adds a widget if it isn't nil
+  if pointer(widget) != nil:
+    items.add(widget)
+
+proc processLoop(x: NimNode): NimNode =
+  let
+    itemsList = ident"items"
+    loop = x
+  result = newStmtList()
+  result &= nnkVarSection.newTree(
+    nnkIdentDefs.newTree(itemsList, nnkBracketExpr.newTree(ident"seq", ident"GtkWidget"), newEmptyNode())
+  )
+  # Make the body just add items into the result
+  loop[^1] = newStmtList(newCall("tryAdd", itemsList, "GtkWidget".newCall(processNode(loop[^1][0]))))
+  result &= loop
+  result &= itemsList
 
 proc processComp(x: NimNode): NimNode =
   x.expectKind(nnkCall)
@@ -288,79 +297,11 @@ proc processComp(x: NimNode): NimNode =
     lastWidget = ident"lastWidget"
   compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"WidgetMemo", newEmptyNode()))
   for child in children:
-    let body = child.processNode().wrapMemo(ident"GtkWidget")
-    compGen &= nnkDiscardStmt.newTree newCall(ident"insert", widget, body, nilWidget)
+    let body = child.processNode().wrapMemo(ident"auto")
+    compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
 
   compGen &= rawWidget
   result = compGen
-
-proc processGUI(x: NimNode): NimNode =
-  x.expectKind(nnkCall)
-  # See which element to create
-  # TODO: Have better system than this
-  let init = newCall(x[0])
-  # Pass args
-  for arg in x[1..^1]:
-    if arg.kind == nnkStmtList: break # This is the child
-    init &= arg
-
-  let
-    widgetName = genSym(nskLet, "widget")
-    nilWidget = newNilLit().toWidget()
-    lastWidget = genSym(nskVar, "lastWidget")
-    updateLast = proc (x: NimNode): NimNode = nnkAsgn.newTree(lastWidget, wrapMemo(x))
-  result = newStmtList()
-  # Start the widget creation
-  result &= newLetStmt(widgetName, newCall(ident"initRoot", newProc(params=[ident"auto"], body=init)))
-  result &= newVarStmt(lastWidget, wrapMemo(nilWidget))
-  if x[^1].kind == nnkStmtList:
-    # Create children and register any events
-    for child in x[^1]:
-      case child.kind
-      of nnkProcDef:
-        # Register event for procs
-        let signalName = child.name.strVal
-        result &= newCall(ident"registerEvent", widgetName.toWidget(), newLit signalName, newProc(body=child.body))
-      of nnkCall:
-        # Create child if its a call
-        let childName = genSym(nskLet, "child")
-        result &= newLetStmt(childName, processGUI(child))
-        result &= updateLast(newCall(ident"insert", widgetName, childName.toWidget(), nilWidget))
-      of nnkAsgn:
-        # Set a reactive property
-        # TODO: Find better way of dealing with nonreactive/reactive and allow both
-        # to be declared inline. Will need better tag tracking for that though
-        # Check this isn't setting a ref
-        let field = newDotExpr(widgetName, child[0])
-        let effectBody = nnkAsgn.newTree(field, child[1])
-        # Wrap the assignment in a createEffect
-        result &= newCall(ident"createEffect", newProc(body=effectBody))
-      of nnkIfStmt:
-        # Build it into a function which `insert` can handle
-        # We also need to make sure that each body gets processed
-        let ifStmt = nnkIfStmt.newTree()
-        for branch in child:
-          let rootCall = newCall(ident"initRoot", accessorProc(branch[^1][0].processGUI(), ident"GtkWidget"))
-          branch[^1] = rootCall
-          ifStmt &= branch
-        # Make sure its an expression
-        if ifStmt[^1].kind != nnkElse:
-          ifStmt &= nnkElse.newTree("GtkWidget".newCall(newNilLit()))
-        result &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widgetName, wrapMemo(accessorProc(ifStmt, ident"GtkWidget")), nilWidget))
-      of nnkForStmt:
-        # First build list of nodes
-        # Initialise the list
-        # Now make the loop add each item into the list
-        let addToListLoop = child.copy()
-        addToListLoop[^1] = newStmtList(newCall("add", ident"result", "GtkWidget".newCall(processGUI(addToListLoop[^1][0]))))
-        let emptySeq =   nnkPrefix.newTree(newIdentNode("@"), nnkBracket.newTree())
-        result &= nnkAsgn.newTree(lastWidget, (newCall(ident"insert", widgetName, addToListLoop.accessorProc(nnkBracketExpr.newTree(ident"seq", ident"GtkWidget")).wrapMemo(), emptySeq, lastWidget)))
-
-      else:
-        "Unknown node".error(child)
-  # Return the child
-  result &= widgetName
-
 
 macro gui(body: untyped): GtkWidget =
   let widget = processNode(body[0])
@@ -402,12 +343,13 @@ when false:
 
 proc Test(): GtkWidget =
   onCleanup do ():
-    echo "Cleaning"
+    echo "Cleaning test"
   return gui:
     Label("Hello")
 
 proc App(): GtkWidget =
   let (show, setShow) = createSignal(false)
+  let (count, setCount) = createSignal(0)
 
   return gui:
     Window:
@@ -419,6 +361,11 @@ proc App(): GtkWidget =
           text = "Show/Hide"
         if show():
           Test()
+        Button("Inc"):
+          proc clicked() =
+            setCount(count() + 1)
+        for i in 0..<count():
+          Label("Hello")
 
 proc render(app: GApplication, window: GtkWidget) =
   gtk_window_present(window);
