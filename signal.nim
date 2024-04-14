@@ -29,6 +29,12 @@ type
       ## any handles that this observer has
     children*: NativeSet[Observer]
       ## Children observers so that we can call dispose and clear everything
+    parent: Observer
+      ## Store the parent. This enables walking up the stack to find contexts
+    contexts: seq[Context]
+      ## All contexts that are stored in this observer
+
+  Context = ref object of RootObj
 
   Computation = ref object of Observer
     ## Computation also has added callback that is called whenever the children update
@@ -37,23 +43,49 @@ type
 proc hash*(x: Observer): Hash =
   result = hash(cast[pointer](x))
 
-var observer* = Observer(children: initNativeSet[Observer]())
-  ## The current observer
-
-template observStack(name: string, body: untyped) =
-  let prev {.inject.} = observer
+var
+  listener*: Computation = nil
+    ## Also tracks dependencies. But by splitting it up we can
+    ## turn it off to turn off tracking for a block of code
+  owner*: Observer = nil
+    ## Used for tracking contexts
+template observStack(body: untyped) =
+  ## Stores the owner, listener and reassigns at end of body.
+  ## Done so that they can be safely reassigned
+  let
+    prevOwner {.inject.} = owner
+    prevListener {.inject.} = listener
+  defer:
+    owner = prevOwner
+    listener = prevListener
   body
-  observer = prev
 
-proc initRoot*[T](body: Accessor[T], name = ""): T =
+template untrack*[T: not void](body: T): T =
+  ## Runs the body but causes any reads to not make it be subscribed
+  var res {.noinit.}: T
+  observStack:
+    listener = nil
+    res = body
+  res
+
+template untrack*(body: untyped): untyped =
+  ## Runs the body but causes any reads to not make it be subscribed
+  observStack:
+    listener = nil
+    body
+
+proc initRoot*[T](body: Accessor[T]): T =
   ## A root just gives you a new section to register observers under
   ## that you can dispose of. Doesn't rerun if its dependencies change.
   ## Basically creates a new graph in the dependency tree? Use then
   ## when you don't want effects to bubble up
-  observStack(name):
-    observer = Observer(children: initNativeSet[Observer]())
+  observStack:
+    owner = Computation(fn: body, children: initNativeSet[Observer]())
+    listener = owner
     # Shouldn't register itself, we need to return a disposal function
-    result = body()
+    untrack:
+      result = body()
+
 
 proc dispose(body: Observer) =
   ## Cleansup an observer by disposing of all its children and itself
@@ -72,19 +104,22 @@ proc dispose(body: Observer) =
 proc initComputation(body: Callback, name = "") =
   ## Create a computation which is an effect that reruns everytime
   ## its dependencies (signals read inside it) change
-  observStack(name):
-    observer = Computation(fn: body, children: initNativeSet[Observer]())
-    prev.children.incl observer
+  observStack:
+    listener = Computation(fn: body, children: initNativeSet[Observer]())
+    owner = listener
+    if prevOwner != nil:
+      prevOwner.children.incl owner
     body()
 
 proc run(x: Computation) =
   ## Runs a computation. First disposes of the previous
   ## run so that it runs freshly (as if it wasn't ran before)
   x.dispose()
-  observStack "":
+  observStack:
     # Set the current observer to be us so that
     # children know who to register themselves to
-    observer = x
+    owner = x
+    listener = x
     x.fn()
 
 
@@ -100,8 +135,8 @@ proc createSignal*[T](init: T): Signal[T] =
   let read = proc (): T {.tags: [ReadSignal].}=
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
-    if observer != nil and observer of Computation:
-      subscribers.incl Computation(observer)
+    if listener != nil:
+      subscribers.incl listener
     value
 
   let write = proc (newVal: T) =
@@ -133,7 +168,11 @@ proc createMemo*[T](callback: Accessor[T]): Accessor[T] =
 
 proc onCleanup*(x: Callback) =
   ## Registers a function to be called when the current computation is cleaned
-  observer.cleanups &= x
+  listener.cleanups &= x
 
-export jsset
+
+when defined(js):
+  export jsset
+else:
+  export sets
 

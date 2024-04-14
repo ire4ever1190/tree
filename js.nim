@@ -240,14 +240,16 @@ proc processComp(x: NimNode): NimNode =
 macro gui(body: untyped): Element =
   processNode(body[0])
 
-proc App(): Element =
-  let (show, setShow) = createSignal(false)
+when isMainModule:
 
-  return gui:
-    tdiv:
-      button:
-        proc click(ev: Event) =
-            setShow(not show())
-        innerText = if show(): "Hide" else: "Show"
+  proc App(): Element =
+    let (show, setShow) = createSignal(false)
 
-discard document.getElementById("root").insert(App)
+    return gui:
+      tdiv:
+        button:
+          proc click(ev: Event) =
+              setShow(not show())
+          innerText = if show(): "Hide" else: "Show"
+
+  discard document.getElementById("root").insert(App)
