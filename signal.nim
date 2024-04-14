@@ -4,7 +4,7 @@ when defined(js):
 else:
   import std/sets
 import macros
-import std/[hashes, options, asyncdispatch]
+import std/[hashes, options]
 
 type
   NativeSet[T] = (when defined(js): JSSet[T] else: HashSet[T])
@@ -135,66 +135,5 @@ proc onCleanup*(x: Callback) =
   ## Registers a function to be called when the current computation is cleaned
   observer.cleanups &= x
 
-proc asyncSignal*[T](fut: Future[T]): Accessor[Option[T]] =
-  let (readRes, setRes) = createSignal(none(string))
-  fut.addCallback do (res: Future[T]):
-    setRes(some res.read())
-  return readRes
-
-
-when defined(js):
-
-  proc insert(parent: Element, child: Element, current: Element = nil) =
-    if current == nil:
-      parent.appendChild(child)
-    else:
-      parent.replaceChild(child, parent.firstChild)
-
-  proc insert(parent: Element, child: Accessor[Element], current: Element = nil) =
-    let current = child()
-    createEffect do ():
-      parent.insert(child(), current)
-
-  proc registerEvent(x: EventTarget, name: cstring, handler: proc (ev: Event)) =
-    x.addEventListener(name, handler)
-    onCleanup do ():
-      echo "Unregistering"
-      x.removeEventListener(name, handler)
-
-  proc counter(): Element =
-    let (count, setCount) = createSignal(0)
-
-    let btn = document.createElement("button")
-
-    btn.registerEvent("click") do (ev: Event):
-      setCount(count() + 1)
-
-    createEffect do ():
-      btn.innerText = cstring($count())
-
-    return btn
-
-  proc app(): auto =
-    let (showCounter, setShowCounter) = createSignal(true)
-
-    proc handleClick(ev: Event) =
-      echo "Clicked"
-      setShowCounter(not showCounter())
-
-    return createMemo do () -> Element:
-      if showCounter():
-        let btn = document.createElement("button")
-        btn.innerText = "Hello"
-        btn.registerEvent("click", handleClick)
-        return btn
-      else:
-        let btn = document.createElement("button")
-        btn.innerText = "Goodbye"
-        btn.registerEvent("click", handleClick)
-        return btn
-
-  document.body.insert(app())
-
-export sets
-
+export jsset
 

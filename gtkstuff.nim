@@ -325,7 +325,7 @@ when false:
         Button(text="Click me"):
           proc clicked() =
             setCount(count() + 1)
-        for i in 0..<count():
+        for i in 0..<count() {.key: i.}:
           Buggon(i)
 
   proc App(): GtkWidget =
