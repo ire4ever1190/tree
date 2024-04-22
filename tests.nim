@@ -1,5 +1,7 @@
 import signal
+import store
 import std/unittest
+
 
 test "Setting a signal updates it":
   let (read, write) = createSignal("foo")
@@ -20,6 +22,40 @@ test "Effect is called when dependencies update":
   check timesCalled == 2
   write(2)
   check timesCalled == 3
+
+test "Void signal can be used":
+  let (subscribe, signal) = createSignal[void]()
+  var timesCalled = 0
+  createEffect do ():
+    subscribe()
+    timesCalled += 1
+
+  for i in 0..<10: signal()
+
+  check timesCalled == 11
+
+test "Basic selector for data store":
+  type
+    Person = object
+      name: string
+      age: int
+    Classroom = object
+      teacher: Person
+      students: Person
+
+  let school = createStore(
+    Classroom(
+      teacher: Person(name: "Greg", age: 47),
+      students: @[
+          Person(name: "John", age: 18),
+          Person(name: "Jack", age: 20),
+          Person(name: "Joe", age: 19)
+      ]
+    )
+  )
+
+  let students = school.select(it.students)
+
 
 test "untrack stops subscriptions":
   let (read, write) = createSignal(0)

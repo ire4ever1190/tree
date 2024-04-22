@@ -1,4 +1,4 @@
-import std/[macros, strformat, dom, macrocache, asyncjs]
+import std/[macros, strformat, dom, macrocache, asyncjs, sequtils]
 import signal, domextras
 
 type ElementMemo = Accessor[Element]
@@ -16,6 +16,9 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
 registerElement("button", ButtonElement)
 registerElement("tdiv", Element)
 registerElement("p", Element)
+
+proc text(val: string): Element =
+  Element(document.createTextNode(val))
 
 proc add(elem: Element, child: Element) =
   if child != nil:
@@ -49,10 +52,10 @@ proc insert[T: Element | seq[Element]](box: Element, value: Accessor[T],
   ## Top level insert that every widget gets called with.
   ## This handle reinserting the wiWindowWidgetdget if it gets updated.
   ## Always returns a GtkWidget. For lists this returns the item at the end
-  var current = Element(current)
+  var current = when T is seq: seq[Element](current) else: Element(current)
   createEffect do ():
     when T is seq:
-      current = box.insert(value(), current, prev())
+      current = box.insert(value(), current, if prev != nil: prev() else: nil)
     else:
       current = box.insert(value(), current)
 
@@ -136,10 +139,15 @@ into
 ```
 let items = block:
   var result: seq[GtkWidget]
+  proc builder(x: i): Element =
+    # build Foo
   for i in 0..<count():
-    result &= # Build Foo
+    result &= builder(i)
   result
-
+```
+The proc means the loop variable is properly captured (So that semantics operate how you expect)
+and also solves the issue with not being able to capture lents. This also paves the way for wrapping
+each item in an `initRoot` so that can we key arrays
 ]#
 
 proc processComp(x: NimNode): NimNode
@@ -174,16 +182,35 @@ proc tryAdd(items: var seq[Element], widget: Element) =
   if widget != nil:
     items.add(widget)
 
+proc findLoopVars(x: NimNode): seq[NimNode] =
+  ## Returns a list of NimNodes that are variables in a loop
+  case x.kind
+  of nnkIdent:
+    result &= x
+  else:
+    # TODO: Add proper checks before this explodes in our face
+    for child in x:
+      result &= findLoopVars(x)
+
 proc processLoop(x: NimNode): NimNode =
   let
     itemsList = ident"items"
     loop = x
+  let
+    vars = findLoopVars(x[0])
+    builderProc = genSym(nskProc, "builder")
+    body = loop[^1][0].processNode().newStmtList()
+  # Build the proc that will get called each loop
+    builder = newProc(builderProc, @[
+      ident"Element"
+    ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = newStmtList())
   result = newStmtList()
+
   result &= nnkVarSection.newTree(
     nnkIdentDefs.newTree(itemsList, nnkBracketExpr.newTree(ident"seq", ident"Element"), newEmptyNode())
   )
   # Make the body just add items into the result
-  loop[^1] = newStmtList(newCall("tryAdd", itemsList, processNode(loop[^1][0])))
+  loop[^1] = newStmtList(builder, newCall("tryAdd", itemsList, builderProc.newCall(vars)))
   result &= loop
   result &= itemsList
 
@@ -200,7 +227,7 @@ proc processComp(x: NimNode): NimNode =
     init &= arg
   # Node that will return the component
   let
-    widget = ident"widget"
+    widget = genSym(nskLet, "widget")
     compGen = newStmtList(newLetStmt(widget, init)) # TODO: Wrap in blockstmt
   # Now look through the children to find extra properties/event handlers.
   # Also store the nodes that we need to process after
@@ -228,8 +255,8 @@ proc processComp(x: NimNode): NimNode =
   let
     # We need to store the last widget seen has a "marker" for
     # loops so that they know where to start inserting items
-    lastWidget = ident"lastWidget"
-  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"ElementMemo", newEmptyNode()))
+    lastWidget = genSym(nskVar, "lastWidget")
+  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"ElementMemo", wrapMemo(widget)))
   for child in children:
     let body = child.processNode().wrapMemo(ident"auto")
     compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
@@ -238,18 +265,22 @@ proc processComp(x: NimNode): NimNode =
   result = compGen
 
 macro gui(body: untyped): Element =
-  processNode(body[0])
+  result = processNode(body[0])
+  echo result.toStrLit
+
 
 when isMainModule:
 
   proc App(): Element =
     let (show, setShow) = createSignal(false)
-
+    let stuff = @[1, 2, 3, 4]
     return gui:
       tdiv:
-        button:
-          proc click(ev: Event) =
-              setShow(not show())
-          innerText = if show(): "Hide" else: "Show"
+        text("Test")
+        for i in stuff:
+          button:
+            proc click(ev: Event) =
+                echo $i
+            text($i)
 
   discard document.getElementById("root").insert(App)

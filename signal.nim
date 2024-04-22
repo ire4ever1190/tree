@@ -111,6 +111,8 @@ proc initComputation(body: Callback, name = "") =
       prevOwner.children.incl owner
     body()
 
+
+
 proc run(x: Computation) =
   ## Runs a computation. First disposes of the previous
   ## run so that it runs freshly (as if it wasn't ran before)
@@ -130,20 +132,22 @@ template staticSignal[T](val: T): Accessor[T] =
 
 proc createSignal*[T](init: T): Signal[T] =
   var subscribers = initNativeSet[Computation]()
-
-  var value = init
+  const hasVal = T isnot void
+  when hasVal:
+    var value = init
   let read = proc (): T {.tags: [ReadSignal].}=
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
     if listener != nil:
       subscribers.incl listener
-    value
+    when hasVal: value
 
   let write = proc (newVal: T) =
-    # Do nothing if they are the same
-    when compiles(newVal == value):
-      if newVal == value: return
-    value = newVal
+    when hasVal:
+      # Do nothing if they are the same
+      when compiles(newVal == value):
+        if newVal == value: return
+      value = newVal
     # Run every context that is subscribed
     let old = subscribers
     for subscriber in old:
@@ -170,6 +174,10 @@ proc onCleanup*(x: Callback) =
   ## Registers a function to be called when the current computation is cleaned
   listener.cleanups &= x
 
+template select*(s: Accessor, selector: untyped): Accessor =
+  createMemo do ():
+    let it = s()
+    selector
 
 when defined(js):
   export jsset
