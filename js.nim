@@ -24,9 +24,6 @@ proc add(elem: Element, child: Element) =
   if child != nil:
     elem.appendChild(child)
 
-proc addAfter(box, widget, after: Element) =
-  discard box.after(after, widget)
-
 proc insert(box, value, current: Element): Element =
   ## Inserts a single widget. Replaces the old widget if possible
   if current == nil:
@@ -43,7 +40,7 @@ proc insert(box: Element, value, current: seq[Element], marker: Element): seq[El
     old.remove()
   var sibling = marker
   for new in value:
-    box.addAfter(new, sibling)
+    discard sibling.after(new)
     sibling = new
     result &= new
 
@@ -81,6 +78,9 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
 
 proc wrapMemo(x: NimNode, returnType = ident"auto"): NimNode =
   newCall("createMemo", if x.kind == nnkProcDef: x else: accessorProc(x, returnType))
+
+proc elemMemo(x: NimNode): NimNode =
+  wrapMemo(x, ident"Element")
 
 
 template nilElement(): NimNode = newCall(ident"Element", newNilLit())
@@ -203,7 +203,7 @@ proc processLoop(x: NimNode): NimNode =
   # Build the proc that will get called each loop
     builder = newProc(builderProc, @[
       ident"Element"
-    ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = newStmtList())
+    ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = body)
   result = newStmtList()
 
   result &= nnkVarSection.newTree(
@@ -256,13 +256,13 @@ proc processComp(x: NimNode): NimNode =
     # We need to store the last widget seen has a "marker" for
     # loops so that they know where to start inserting items
     lastWidget = genSym(nskVar, "lastWidget")
-  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"ElementMemo", wrapMemo(widget)))
+  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"ElementMemo", elemMemo(widget)))
   for child in children:
     let body = child.processNode().wrapMemo(ident"auto")
     compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
 
   compGen &= widget
-  result = compGen
+  result = "Element".ident().newCall(compGen)
 
 macro gui(body: untyped): Element =
   result = processNode(body[0])
@@ -282,5 +282,4 @@ when isMainModule:
             proc click(ev: Event) =
                 echo $i
             text($i)
-
   discard document.getElementById("root").insert(App)
