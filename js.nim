@@ -15,6 +15,7 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
 
 registerElement("button", ButtonElement)
 registerElement("tdiv", Element)
+registerElement("input", InputElement)
 registerElement("p", Element)
 
 proc text(val: string): Element =
@@ -220,11 +221,14 @@ proc processComp(x: NimNode): NimNode =
   # TODO: Compare style insensitive
   # Generate the inital call
   let init = newCall(x[0])
-
+  var refVar: NimNode = nil
   # Pass args
   for arg in x[1..^1]:
     if arg.kind == nnkStmtList: break # This is the child
-    init &= arg
+    if arg.kind == nnkRefTy:
+      refVar = arg[0]
+    else:
+      init &= arg
   # Node that will return the component
   let
     widget = genSym(nskLet, "widget")
@@ -261,6 +265,8 @@ proc processComp(x: NimNode): NimNode =
     let body = child.processNode().wrapMemo(ident"auto")
     compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
 
+  if refVar != nil:
+    compGen &= nnkAsgn.newTree(refVar, widget)
   compGen &= widget
   result = "Element".ident().newCall(compGen)
 
@@ -270,16 +276,43 @@ macro gui(body: untyped): Element =
 
 
 when isMainModule:
+  import std/[jsfetch, strformat, json, options]
+
+  type
+    Show = object
+      Title: string
+      Poster: string
+      Plot: string
+
+  proc search(text: cstring): Future[Show] {.async.} =
+    let res = fetch(cstring fmt"https://omdbapi.com?apikey={key}&t={text}").await().text()
+    let json = res.await().`$`.parseJson()
+    if "Response" notin json:
+      return json.to(Show)
+
+  proc debounce(body: proc): proc (time: int) =
+    var timeout: TimeOut
+    let performTimout = proc (time: int) =
+      clearTimeout(timeout)
+      timeout = setTimeout(cast[proc()](body), time)
+    performTimout
+
 
   proc App(): Element =
-    let (show, setShow) = createSignal(false)
-    let stuff = @[1, 2, 3, 4]
+    let
+      (show, setShow)= createSignal(none(Show))
+      (searchString, setSearchString) = createSignal("")
+    var input: Element
+    let makeRequest = debounce() do () {.async.}:
+      echo input.value
+      input.value.search().await().some().setShow()
+
     return gui:
       tdiv:
-        text("Test")
-        for i in stuff:
-          button:
-            proc click(ev: Event) =
-                echo $i
-            text($i)
+        input(ref input):
+          proc click() =
+            makeRequest(1000)
+        if show().isSome():
+          text(show().get().Title)
+
   discard document.getElementById("root").insert(App)
