@@ -21,9 +21,19 @@ registerElement("p", Element)
 proc text(val: string): Element =
   Element(document.createTextNode(val))
 
+proc text(val: Accessor[string]): Element =
+  result = text(val())
+  createEffect do ():
+    result.innerText = cstring(val())
+
 proc add(elem: Element, child: Element) =
   if child != nil:
     elem.appendChild(child)
+
+macro jsHandler*(args: varargs[typedesc]): typedesc =
+  result = ident"int"
+
+
 
 proc insert(box, value, current: Element): Element =
   ## Inserts a single widget. Replaces the old widget if possible
@@ -65,7 +75,7 @@ proc insert[T: Element | seq[Element]](box: Element, value: Accessor[T],
     else:
       current
 
-proc registerEvent(elem: Element, name: cstring, callback: proc (ev: Event)) =
+proc registerEvent(elem: Element, name: cstring, callback: jsHandler(ev: Event)) =
   elem.addEventListener(name, callback)
 
   onCleanup do ():
@@ -277,6 +287,7 @@ macro gui(body: untyped): Element =
 
 when isMainModule:
   import std/[jsfetch, strformat, json, options]
+  const key {.strdefine: "omdbKey".}: string = ""
 
   type
     Show = object
@@ -287,9 +298,10 @@ when isMainModule:
   proc search(text: cstring): Future[Show] {.async.} =
     let res = fetch(cstring fmt"https://omdbapi.com?apikey={key}&t={text}").await().text()
     let json = res.await().`$`.parseJson()
-    if "Response" notin json:
+    if json["Response"].getStr() == "True":
       return json.to(Show)
-
+    else:
+      return Show()
   proc debounce(body: proc): proc (time: int) =
     var timeout: TimeOut
     let performTimout = proc (time: int) =
@@ -303,6 +315,10 @@ when isMainModule:
       (show, setShow)= createSignal(none(Show))
       (searchString, setSearchString) = createSignal("")
     var input: Element
+
+    createEffect() do ():
+      input.registerEvent("click") do ():
+        echo "test"
     let makeRequest = debounce() do () {.async.}:
       echo input.value
       input.value.search().await().some().setShow()
@@ -310,7 +326,7 @@ when isMainModule:
     return gui:
       tdiv:
         input(ref input):
-          proc click() =
+          proc input() =
             makeRequest(1000)
         if show().isSome():
           text(show().get().Title)

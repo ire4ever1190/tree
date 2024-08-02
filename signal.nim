@@ -18,7 +18,7 @@ type
     ## Effect to show that a proc reads a signal
   Accessor*[T] = proc (): T
   Setter[T] = proc (newVal: T)
-  Signal[T] = tuple[get: Accessor[T], set: Setter[T]]
+  Signal*[T] = tuple[get: Accessor[T], set: Setter[T]]
 
 
   Callback = proc ()

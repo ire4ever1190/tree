@@ -41,7 +41,7 @@ test "Basic selector for data store":
       age: int
     Classroom = object
       teacher: Person
-      students: Person
+      students: seq[Person]
 
   let school = createStore(
     Classroom(
