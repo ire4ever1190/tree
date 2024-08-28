@@ -215,6 +215,8 @@ proc processNode(x: NimNode): NimNode =
     #  result &= node.processNode()
     #result
     x.processStmts()
+  of nnkLetSection:
+    x
   else:
     ("Unexpected statement: " & $x.kind).error(x)
 
@@ -362,6 +364,8 @@ when isMainModule:
     let json = res.await().`$`.parseJson()
     if json["Response"].getStr() == "True":
       return some json.to(Show)
+    else:
+      return none(Show)
 
   proc debounce(time: int, body: proc): proc () =
       ## Returns a proc that will get debounced if called multiple times
@@ -417,6 +421,10 @@ when isMainModule:
         of Loading:
           text("Loading...")
         of Loaded:
-          text(data().data.get().Title)
+          let show = data().data
+          if show.isSome():
+            text(show.unsafeGet.Title)
+          else:
+            text("Not found")
 
   discard document.getElementById("root").insert(App)
