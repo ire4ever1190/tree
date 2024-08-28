@@ -30,9 +30,24 @@ proc add(elem: Element, child: Element) =
   if child != nil:
     elem.appendChild(child)
 
-macro jsHandler*(args: varargs[typedesc]): typedesc =
-  result = ident"int"
-
+macro jsHandler*(handler: typedesc[proc]): typedesc =
+  ## Helper to convert a handler into a conjunction of possible handlers.
+  ## Use this to make handlers have the same ergonomics like in JS
+  # First build the list of different procs
+  var
+    options: seq[NimNode]
+    currProc = nnkProcTy.newTree(nnkFormalParams.newTree(handler.params[0]), newEmptyNode())
+  options &= currProc
+  for identDef in handler.params[1 .. ^1]:
+    let kind = identDef[^2]
+    for param in identDef[0 ..< ^2]:
+      let copy = currProc.copy()
+      copy.params &= newIdentDefs(param, kind)
+      options &= copy
+  # Now build a list of everything or'd together
+  result = options[0]
+  for option in options[1 .. ^1]:
+    result = nnkInfix.newTree(ident"or", result, option)
 
 
 proc insert(box, value, current: Element): Element =
@@ -75,7 +90,7 @@ proc insert[T: Element | seq[Element]](box: Element, value: Accessor[T],
     else:
       current
 
-proc registerEvent(elem: Element, name: cstring, callback: jsHandler(ev: Event)) =
+proc registerEvent(elem: Element, name: cstring, callback: jsHandler(proc (ev: Event))) =
   elem.addEventListener(name, callback)
 
   onCleanup do ():
@@ -316,9 +331,6 @@ when isMainModule:
       (searchString, setSearchString) = createSignal("")
     var input: Element
 
-    createEffect() do ():
-      input.registerEvent("click") do ():
-        echo "test"
     let makeRequest = debounce() do () {.async.}:
       echo input.value
       input.value.search().await().some().setShow()
