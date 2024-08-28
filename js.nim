@@ -154,6 +154,22 @@ let elem = block:
     GtkWidget(nil) # We always need to return something
 ```
 
+Case Expressions
+================
+
+```
+case data():
+of Foo: discard
+of Bar: text("hello")
+```
+into
+```
+let elem = block
+  case data()
+  of Foo: nil # Need to return something
+  of Bar: # Build text widget
+```
+
 For Loops
 =========
 
@@ -179,6 +195,8 @@ each item in an `initRoot` so that can we key arrays
 proc processComp(x: NimNode): NimNode
 proc processIf(x: NimNode): NimNode
 proc processLoop(x: NimNode): NimNode
+proc processCase(x: NimNode): NimNode
+proc processStmts(x: NimNode): NimNode
 
 proc processNode(x: NimNode): NimNode =
   case x.kind
@@ -188,9 +206,22 @@ proc processNode(x: NimNode): NimNode =
     x.processComp()
   of nnkForStmt, nnkWhileStmt:
     x.processLoop()
+  of nnkCaseStmt:
+    x.processCase()
+  of nnkStmtList:
+    # Compiler bug?
+    #result = nnkStmtList.newTree()
+    #for node in x:
+    #  result &= node.processNode()
+    #result
+    x.processStmts()
   else:
-    "Unexpected statement".error(x)
+    ("Unexpected statement: " & $x.kind).error(x)
 
+proc processStmts(x: NimNode): NimNode =
+  result = newStmtList()
+  for node in x:
+    result &= node.processNode()
 
 proc processIf(x: NimNode): NimNode =
   let ifStmt = nnkIfStmt.newTree()
@@ -240,6 +271,21 @@ proc processLoop(x: NimNode): NimNode =
   result &= loop
   result &= itemsList
 
+proc processCase(x: NimNode): NimNode =
+  x.expectKind(nnkCaseStmt)
+  result = nnkCaseStmt.newTree(x[0])
+  for branch in x[1..^1]: # Ignore first item
+    echo branch.treeRepr
+    let expr = branch[^1]
+    if expr.kind == nnkStmtList and expr[0].kind == nnkDiscardStmt:
+      # Discard could have side effects, so still call it but make it
+      # into an expression that returns nil
+      branch[^1] = newStmtList(expr[0], nilElement())
+    else:
+      let rootCall = branch[^1].processNode()
+      branch[^1] = rootCall
+    result &= branch
+
 proc processComp(x: NimNode): NimNode =
   x.expectKind(nnkCall)
   # Check if we are creating a builtin element or a custom component
@@ -275,9 +321,10 @@ proc processComp(x: NimNode): NimNode =
         let effectBody = nnkAsgn.newTree(field, child[1])
         # Wrap the assignment in a createEffect
         compGen &= newCall(ident"createEffect", newProc(body=effectBody))
-      of nnkIfStmt, nnkForStmt, nnkCall: # Other supported nodes
+      of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt: # Other supported nodes
         children &= child
       else:
+        # ???? Shouldn't I error here?
         discard processNode(child)
 
   # Process any children that need to get added
@@ -310,37 +357,66 @@ when isMainModule:
       Poster: string
       Plot: string
 
-  proc search(text: cstring): Future[Show] {.async.} =
+  proc search(text: cstring): Future[Option[Show]] {.async.} =
     let res = fetch(cstring fmt"https://omdbapi.com?apikey={key}&t={text}").await().text()
     let json = res.await().`$`.parseJson()
     if json["Response"].getStr() == "True":
-      return json.to(Show)
-    else:
-      return Show()
-  proc debounce(body: proc): proc (time: int) =
-    var timeout: TimeOut
-    let performTimout = proc (time: int) =
-      clearTimeout(timeout)
-      timeout = setTimeout(cast[proc()](body), time)
-    performTimout
+      return some json.to(Show)
 
+  proc debounce(time: int, body: proc): proc () =
+      ## Returns a proc that will get debounced if called multiple times
+      var timeout: TimeOut
+      let performTimout = proc () =
+        clearTimeout(timeout)
+        timeout = setTimeout(cast[proc()](body), time)
+      performTimout
+
+  type
+    AsyncState = enum
+      Nothing
+      Loading
+      Loaded
+    AsyncSignal[T] = object
+      case state: AsyncState
+      of Nothing, Loading: discard
+      of Loaded:
+        data: T
+  import std/jsconsole
+  proc createFuture[T](): tuple[data: Accessor[AsyncSignal[T]], setter: Setter[Future[T]]] =
+    let (data, setData) = createSignal(AsyncSignal[T](state: Nothing))
+    let (future, setFuture) = createSignal[Future[T]](nil)
+    createEffect() do ():
+      let future = future()
+      console.log(future)
+      if future != nil:
+        setData(AsyncSignal[T](state: Loading))
+        discard future.then(
+          onSuccess = proc (data: T) =
+            setData(AsyncSignal[T](state: Loaded, data: data))
+          ,onReject = proc (reason: Error) =
+            echo "Error ", reason.message
+        )
+    return (data, setFuture)
 
   proc App(): Element =
     let
-      (show, setShow)= createSignal(none(Show))
+      (data, setData) = createFuture[Option[Show]]()
       (searchString, setSearchString) = createSignal("")
     var input: Element
 
-    let makeRequest = debounce() do () {.async.}:
-      echo input.value
-      input.value.search().await().some().setShow()
+    let makeRequest = debounce(1000) do ():
+      input.value.search().setData()
 
     return gui:
       tdiv:
         input(ref input):
           proc input() =
-            makeRequest(1000)
-        if show().isSome():
-          text(show().get().Title)
+            makeRequest()
+        case data().state
+        of Nothing: discard
+        of Loading:
+          text("Loading...")
+        of Loaded:
+          text(data().data.get().Title)
 
   discard document.getElementById("root").insert(App)
