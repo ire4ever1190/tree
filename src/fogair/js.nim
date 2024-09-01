@@ -10,7 +10,7 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
   # Return a proc which will create it
   let id = ident name
   result = quote do:
-    proc `id`(): `kind` =
+    proc `id`*(): `kind` =
       `kind`(document.createElement(`name`))
 
 registerElement("button", ButtonElement)
@@ -55,7 +55,7 @@ macro jsHandler*(handler: typedesc[proc]): typedesc =
     result = nnkInfix.newTree(ident"or", result, option)
 
 
-proc insert(box, value, current: Element): Element =
+proc insert*(box, value, current: Element): Element =
   ## Inserts a single widget. Replaces the old widget if possible
   if current == nil:
     box.add(value)
@@ -63,7 +63,7 @@ proc insert(box, value, current: Element): Element =
     current.replaceWith(value)
   result = value
 
-proc insert(box: Element, value, current: seq[Element], marker: Element): seq[Element] =
+proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[Element] =
   ## Inserts a list of widgets.
   ## Inserts them after `marker`
   # TODO: Add reconcilation via keys
@@ -75,7 +75,7 @@ proc insert(box: Element, value, current: seq[Element], marker: Element): seq[El
     sibling = new
     result &= new
 
-proc insert[T: Element | seq[Element]](box: Element, value: Accessor[T],
+proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
                                                current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
   ## Top level insert that every widget gets called with.
   ## This handle reinserting the wiWindowWidgetdget if it gets updated.
@@ -95,7 +95,7 @@ proc insert[T: Element | seq[Element]](box: Element, value: Accessor[T],
     else:
       current
 
-proc registerEvent(elem: Element, name: cstring, callback: jsHandler(proc (ev: Event))) =
+proc registerEvent*(elem: Element, name: cstring, callback: jsHandler(proc (ev: Event))) =
   elem.addEventListener(name, callback)
 
   onCleanup do ():
@@ -367,7 +367,7 @@ proc processComp(x: NimNode): NimNode =
   compGen &= widget
   result = "Element".ident().newCall(compGen)
 
-macro gui(body: untyped): Element =
+macro gui*(body: untyped): Element =
   result = processNode(body[0])
   echo result.toStrLit
 
