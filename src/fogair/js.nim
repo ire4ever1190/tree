@@ -11,22 +11,41 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
   let id = ident name
   result = quote do:
     proc `id`*(): `kind` =
-      `kind`(document.createElement(`name`))
+      `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
 
+# Basic elements
+registerElement("tdiv", BaseElement)
+registerElement("span", BaseElement)
 registerElement("button", ButtonElement)
-registerElement("tdiv", Element)
+registerElement("nav", ButtonElement)
+registerElement("ul", ButtonElement)
+registerElement("ol", ButtonElement)
+registerElement("li", ButtonElement)
+registerElement("a", AElement)
+registerElement("img", ImgElement)
+registerElement("p", BaseElement)
+# Form elements
 registerElement("input", InputElement)
-registerElement("p", Element)
+registerElement("select", BaseElement)
+registerElement("option", OptionElement)
+
+# Textual elements
+registerElement("h1", BaseElement)
+registerElement("h2", BaseElement)
+registerElement("h3", BaseElement)
+registerElement("h4", BaseElement)
+registerElement("h5", BaseElement)
+registerElement("strong", BaseElement)
 
 proc isBuiltIn(name: string | NimNode): bool =
   ## Returns true if the name matches a built in element
   for key, _ in builtinElements:
     if key.eqIdent(name): return true
 
-proc text(val: string): Element =
+proc text*(val: string): Element =
   Element(document.createTextNode(val))
 
-proc text(val: Accessor[string]): Element =
+proc text*(val: Accessor[string]): Element =
   result = text(val())
   createEffect do ():
     result.innerText = cstring(val())
@@ -52,8 +71,9 @@ macro jsHandler*(handler: typedesc[proc]): typedesc =
   # Now build a list of everything or'd together
   result = options[0]
   for option in options[1 .. ^1]:
-    result = nnkInfix.newTree(ident"or", result, option)
-
+    result = nnkPar.newTree(nnkInfix.newTree(ident"or", result, option))
+  echo result.toStrLit
+  echo result.treeRepr
 
 proc insert*(box, value, current: Element): Element =
   ## Inserts a single widget. Replaces the old widget if possible
@@ -69,11 +89,16 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
   # TODO: Add reconcilation via keys
   for old in current:
     old.remove()
-  var sibling = marker
-  for new in value:
-    discard sibling.after(new)
-    sibling = new
-    result &= new
+  if marker == nil:
+    for new in value:
+      box.appendChild(new)
+      result &= new
+  else:
+    var sibling = marker
+    for new in value:
+      discard sibling.after(new)
+      sibling = new
+      result &= new
 
 proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
                                                current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
@@ -95,11 +120,19 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
     else:
       current
 
-proc registerEvent*(elem: Element, name: cstring, callback: jsHandler(proc (ev: Event))) =
-  elem.addEventListener(name, callback)
+# ???? Why doesn't it allow the same???
+
+proc registerEvent*(elem: EventTarget, name: cstring, callback: (proc ())) =
+  elem.addEventListener(name, cast[proc (ev: Event)](callback))
 
   onCleanup do ():
-    elem.removeEventListener(name, callback)
+    elem.removeEventListener(name, cast[proc (ev: Event)](callback))
+
+proc registerEvent*(elem: EventTarget, name: cstring, callback: (proc (ev: Event))) =
+  elem.addEventListener(name, cast[proc (ev: Event)](callback))
+
+  onCleanup do ():
+    elem.removeEventListener(name, cast[proc (ev: Event)](callback))
 
 proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
   newProc(
@@ -207,7 +240,7 @@ proc processNode(x: NimNode): NimNode =
   case x.kind
   of nnkIfStmt:
     x.processIf()
-  of nnkCall:
+  of nnkCall, nnkCommand:
     x.processComp()
   of nnkForStmt, nnkWhileStmt:
     x.processLoop()
@@ -241,7 +274,7 @@ proc processIf(x: NimNode): NimNode =
     ifStmt &= nnkElse.newTree(nilElement())
   result = ifStmt
 
-proc tryAdd(items: var seq[Element], widget: Element) =
+proc tryAdd*(items: var seq[Element], widget: Element) =
   ## Only adds a widget if it isn't nil
   if widget != nil:
     items.add(widget)
@@ -264,7 +297,9 @@ proc processLoop(x: NimNode): NimNode =
     vars = findLoopVars(x[0])
     builderProc = genSym(nskProc, "builder")
     body = loop[^1][0].processNode().newStmtList()
-  # Build the proc that will get called each loop
+    # Build the proc that will get called each loop
+    # This is so the closure stores the loop variable and makes it behave
+    # as expected
     builder = newProc(builderProc, @[
       ident"Element"
     ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = body)
@@ -282,7 +317,6 @@ proc processCase(x: NimNode): NimNode =
   x.expectKind(nnkCaseStmt)
   result = nnkCaseStmt.newTree(x[0])
   for branch in x[1..^1]: # Ignore first item
-    echo branch.treeRepr
     let expr = branch[^1]
     if expr.kind == nnkStmtList and expr[0].kind == nnkDiscardStmt:
       # Discard could have side effects, so still call it but make it
@@ -297,7 +331,11 @@ proc generateAsgn(widget, prop, value: NimNode): NimNode =
   ## Generates an assignment.
   ## Optimises static values to not be wrapped in an effect
   let field = newDotExpr(widget, prop)
-  result = nnkAsgn.newTree(field, value)
+  # Style we set with setAttribute.
+  if prop.eqIdent("style"):
+    result = newCall(ident"setAttribute", widget, newLit $prop, value)
+  else:
+    result = nnkAsgn.newTree(field, value)
   # Wrap the assignment in a createEffect if not a static value.
   # In future the createEffect should be smarter and track effects and then
   # optimise itself out if there are no effects in the body
@@ -305,7 +343,6 @@ proc generateAsgn(widget, prop, value: NimNode): NimNode =
     result = newCall(ident"createEffect", newProc(body=result))
 
 proc processComp(x: NimNode): NimNode =
-  x.expectKind(nnkCall)
   let init = newCall(x[0])
   # Check if this is a native HTML element.
   # Then we must add the properties to the body inside of the call
@@ -343,7 +380,8 @@ proc processComp(x: NimNode): NimNode =
       case child.kind
       of nnkProcDef: # Event handler
         let signalName = child.name.strVal.newLit()
-        compGen &= newCall(ident"registerEvent", widget, signalName, newProc(body=child.body, params=[newEmptyNode(), nnkIdentDefs.newTree(ident"ev", ident"Event", newEmptyNode())]))
+        compGen &= child
+        compGen &= newCall(ident"registerEvent", widget, newCall("cstring", signalName), child.name)
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
       of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt: # Other supported nodes
@@ -357,7 +395,8 @@ proc processComp(x: NimNode): NimNode =
     # We need to store the last widget seen has a "marker" for
     # loops so that they know where to start inserting items
     lastWidget = genSym(nskVar, "lastWidget")
-  compGen &= nnkVarSection.newTree(nnkIdentDefs.newTree(lastWidget, bindSym"ElementMemo", elemMemo(widget)))
+  compGen.add quote do:
+    var `lastWidget`: ElementMemo = nil
   for child in children:
     let body = child.processNode().wrapMemo(ident"auto")
     compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
@@ -453,3 +492,5 @@ when isMainModule:
             text("Not found")
 
   discard document.getElementById("root").insert(App)
+
+export domextras

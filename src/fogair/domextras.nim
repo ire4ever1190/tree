@@ -1,7 +1,12 @@
-import std/dom
+import dom
 
 type
-  ButtonElement* {.importc.} = ref object of Element
+  BaseElement* {.importc.} = ref object of Element
+    role*: cstring
+
+  AElement* {.importc.} = ref object of Element
+    href*: cstring
+  ButtonElement* {.importc.} = ref object of BaseElement
     autofocus: bool
     formaction: cstring
     formenctype: cstring
@@ -11,6 +16,9 @@ type
     # TODO: popover stuff
     `type`: cstring
     value: cstring
+  ImgElement* {.importc.} = ref object of ImageElement
+    loading*: cstring
 
 
-proc form(btn: ButtonElement): FormElement {.importc: "#.form".}
+proc form(btn: ButtonElement): dom.FormElement {.importc: "#.form".}
+proc name*(event: Event): cstring {.importc: "#.name".}
