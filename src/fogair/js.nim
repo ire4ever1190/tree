@@ -18,6 +18,11 @@ registerElement("tdiv", Element)
 registerElement("input", InputElement)
 registerElement("p", Element)
 
+proc isBuiltIn(name: string | NimNode): bool =
+  ## Returns true if the name matches a built in element
+  for key, _ in builtinElements:
+    if key.eqIdent(name): return true
+
 proc text(val: string): Element =
   Element(document.createTextNode(val))
 
@@ -288,24 +293,46 @@ proc processCase(x: NimNode): NimNode =
       branch[^1] = rootCall
     result &= branch
 
+proc generateAsgn(widget, prop, value: NimNode): NimNode =
+  ## Generates an assignment.
+  ## Optimises static values to not be wrapped in an effect
+  let field = newDotExpr(widget, prop)
+  result = nnkAsgn.newTree(field, value)
+  # Wrap the assignment in a createEffect if not a static value.
+  # In future the createEffect should be smarter and track effects and then
+  # optimise itself out if there are no effects in the body
+  if value.kind notin nnkLiterals:
+    result = newCall(ident"createEffect", newProc(body=result))
+
 proc processComp(x: NimNode): NimNode =
   x.expectKind(nnkCall)
-  # Check if we are creating a builtin element or a custom component
-  # TODO: Compare style insensitive
-  # Generate the inital call
   let init = newCall(x[0])
-  var refVar: NimNode = nil
+  # Check if this is a native HTML element.
+  # Then we must add the properties to the body inside of the call
+  let native = isBuiltIn(x[0])
+  var
+    refVar: NimNode = nil
+    props: seq[NimNode]
   # Pass args
   for arg in x[1..^1]:
     if arg.kind == nnkStmtList: break # This is the child
     if arg.kind == nnkRefTy:
       refVar = arg[0]
     else:
-      init &= arg
+      # TODO: Add error handling for native elements.
+      # i.e. everything should be passed like prop=value
+      props &= arg
   # Node that will return the component
   let
     widget = genSym(nskLet, "widget")
     compGen = newStmtList(newLetStmt(widget, init)) # TODO: Wrap in blockstmt
+  # Native elements need each property to be assigned
+  # Non native elements need the props passed to the call
+  if native:
+    for prop in props:
+      compGen &= generateAsgn(widget, prop[0], prop[1])
+  else:
+    init &= props
   # Now look through the children to find extra properties/event handlers.
   # Also store the nodes that we need to process after
   var
@@ -318,11 +345,7 @@ proc processComp(x: NimNode): NimNode =
         let signalName = child.name.strVal.newLit()
         compGen &= newCall(ident"registerEvent", widget, signalName, newProc(body=child.body, params=[newEmptyNode(), nnkIdentDefs.newTree(ident"ev", ident"Event", newEmptyNode())]))
       of nnkAsgn: # Extra property
-        # In future, this would just get added to the call
-        let field = newDotExpr(widget, child[0])
-        let effectBody = nnkAsgn.newTree(field, child[1])
-        # Wrap the assignment in a createEffect
-        compGen &= newCall(ident"createEffect", newProc(body=effectBody))
+        compGen &= generateAsgn(widget, child[0], child[1])
       of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt: # Other supported nodes
         children &= child
       else:
@@ -365,6 +388,8 @@ when isMainModule:
     if json["Response"].getStr() == "True":
       return some json.to(Show)
     else:
+      # This gets around a compiler bug with it not properly setting the result.
+      # So the code would be unsound since it would be returning null instead of none(Show)
       return none(Show)
 
   proc debounce(time: int, body: proc): proc () =
@@ -412,7 +437,7 @@ when isMainModule:
       input.value.search().setData()
 
     return gui:
-      tdiv:
+      tdiv(class="test"):
         input(ref input):
           proc input() =
             makeRequest()
