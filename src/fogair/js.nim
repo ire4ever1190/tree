@@ -159,8 +159,11 @@ proc tryElideMemo(x: NimNode): NimNode =
   # We need to copy the compiler or the compiler will error during lambda lifting (It syms the proc to be a closure, then gets confused when we inline it)
   let innerCall = if x.kind == nnkProcDef: x else: accessorProc(x.copy())
   result = newStmtList()
-  let innerCallSym = genSym(nskLet, "innerCall")
-  result &= newLetStmt(innerCallSym, innerCall)
+  # Make it be an actual function instead of a variable.
+  # This way it can have DCE
+  let innerCallSym = genSym(nskProc, "innerCall")
+  innerCall.name = innerCallSym
+  result &= innerCall
   # If it does read a signal, then it needs to be wrapped in a memo.
   # Otherwise we can just pass the return value directly
   result &= nnkWhenStmt.newTree(
