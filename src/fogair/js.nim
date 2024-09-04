@@ -1,5 +1,5 @@
 import std/[macros, strformat, dom, macrocache, asyncjs, sequtils]
-import signal, domextras
+import ./signal, ./domextras
 
 type ElementMemo = Accessor[Element]
 
@@ -12,8 +12,8 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
   result = quote do:
     # Saved 2kb by using templates. Seems Nim's codegen
     # doesn't play well with tersers mangler
-    template `id`*(): `kind` =
-      document.createElement(when `name` == "tdiv": "div" else: `name`)
+    proc `id`*(): `kind` =
+      `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
 
 # Basic elements
 registerElement("tdiv", BaseElement)
@@ -83,6 +83,10 @@ proc insert*(box, value, current: Element): Element =
     current.replaceWith(value)
   result = value
 
+proc insert*(box, value: Element, prev: Accessor[Element]): Element =
+  box.insert(value, nil)
+
+proc remove*(child: Node) {.importcpp.}
 proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[Element] =
   ## Inserts a list of widgets.
   ## Inserts them after `marker`
@@ -141,10 +145,28 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
   )
 
 proc wrapMemo(x: NimNode, returnType = ident"auto"): NimNode =
-  newCall("createMemo", if x.kind == nnkProcDef: x else: accessorProc(x, returnType))
+  newCall("createMemo", if x.kind in {nnkProcDef, nnkSym}: x else: accessorProc(x, returnType))
 
 proc elemMemo(x: NimNode): NimNode =
   wrapMemo(x, ident"Element")
+
+
+proc tryElideMemo(x: NimNode): NimNode =
+  ## Checks if the body reads a signal. If it doesn't
+  ## then it removes the `createMemo` call.
+  ## This removes the overhead of the memo and also inlines the body so removes the closure
+  # Generate the call that gets passed to the memo.
+  # We need to copy the compiler or the compiler will error during lambda lifting (It syms the proc to be a closure, then gets confused when we inline it)
+  let innerCall = if x.kind == nnkProcDef: x else: accessorProc(x.copy())
+  result = newStmtList()
+  let innerCallSym = genSym(nskLet, "innerCall")
+  result &= newLetStmt(innerCallSym, innerCall)
+  # If it does read a signal, then it needs to be wrapped in a memo.
+  # Otherwise we can just pass the return value directly
+  result &= nnkWhenStmt.newTree(
+    nnkElifBranch.newTree(newCall(ident"performsRead", innerCallSym), wrapMemo(innerCallSym)),
+    nnkElse.newTree(x)
+  )
 
 
 template nilElement(): NimNode = newCall(ident"Element", newNilLit())
@@ -375,6 +397,7 @@ proc processComp(x: NimNode): NimNode =
   var
     children: seq[NimNode] # Child nodes to create after
     events: seq[tuple[name: string, handler: NimNode]]
+    hasComplexStmt = false # Track any case, for, if, etc
   if x[^1].kind == nnkStmtList:
     for child in x[^1]:
       case child.kind
@@ -385,21 +408,34 @@ proc processComp(x: NimNode): NimNode =
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
       of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt: # Other supported nodes
+        # TODO: Check if I pass lastWidget for if and case statements.
+        # Since if they return nil, what do we replace with when not null???
+        if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt}:
+          hasComplexStmt = true
         children &= child
       else:
         # ???? Shouldn't I error here?
         discard processNode(child)
 
   # Process any children that need to get added
-  let
-    # We need to store the last widget seen has a "marker" for
-    # loops so that they know where to start inserting items
-    lastWidget = genSym(nskVar, "lastWidget")
-  compGen.add quote do:
-    var `lastWidget`: ElementMemo = nil
-  for child in children:
-    let body = child.processNode().wrapMemo(ident"auto")
-    compGen &= nnkAsgn.newTree(lastWidget, newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget)))
+  if children.len > 0:
+    let
+      # We need to store the last widget seen has a "marker" for
+      # loops so that they know where to start inserting items
+      lastWidget = genSym(nskVar, "lastWidget")
+    compGen.add quote do:
+      var `lastWidget`: ElementMemo = nil
+    for child in children:
+      let body = if not hasComplexStmt:
+          child.processNode().tryElideMemo()
+        else:
+          child.processNode().wrapMemo()
+      let insertCall = newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget))
+      if hasComplexStmt:
+        compGen &= nnkAsgn.newTree(lastWidget, insertCall)
+      else:
+        compGen &= nnkDiscardStmt.newTree(insertCall)
+
 
   if refVar != nil:
     compGen &= nnkAsgn.newTree(refVar, widget)
@@ -409,6 +445,7 @@ proc processComp(x: NimNode): NimNode =
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
+  echo result.toStrLit
 
 
 when isMainModule:

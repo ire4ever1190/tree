@@ -3,7 +3,7 @@ when defined(js):
   import std/dom
 else:
   import std/sets
-import macros
+import std/[macros, effecttraits]
 import std/[hashes, options]
 
 type
@@ -14,11 +14,13 @@ proc initNativeSet[T](): NativeSet[T] =
   else: initHashSet[T]()
 
 type
-  ReadSignal* = object
+  ReadEffect* = object of RootEffect
     ## Effect to show that a proc reads a signal
   Accessor*[T] = proc (): T
   Setter*[T] = proc (newVal: T)
-  Signal*[T] = tuple[get: Accessor[T], set: Setter[T]]
+  # Issue, the proc type needs to be here or else the tags are not carried across?
+  # Unsure if its an effect bug or generic instanitation bug
+  Signal*[T] = tuple[get: proc (): T {.tags: [ReadEffect].}, set: Setter[T]]
 
 
   Callback = proc ()
@@ -135,7 +137,7 @@ proc createSignal*[T](init: T): Signal[T] =
   const hasVal = T isnot void
   when hasVal:
     var value = init
-  let read = proc (): T {.tags: [ReadSignal].}=
+  let read = proc (): T {.tags: [ReadEffect].}=
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
     if listener != nil:
@@ -158,11 +160,11 @@ proc createSignal*[T](init: T): Signal[T] =
 proc inc*[T: SomeInteger](signal: Signal[T], amount: T = 1) =
   signal.set(signal.get() + amount)
 
-proc createEffect*(callback: proc ()) =
+proc createEffect*(callback: proc ()) {.effectsOf: callback.}=
   ## Wrapper around initComputation
   initComputation(callback)
 
-proc createMemo*[T](callback: Accessor[T]): Accessor[T] =
+proc createMemo*[T](callback: Accessor[T]): Accessor[T] {.effectsOf: callback.}=
   ## Memo will return the last value of the computation.
   ## Automatically updates when its dependencies change
   let (getVal, setVal) = createSignal(default(T))
@@ -170,7 +172,7 @@ proc createMemo*[T](callback: Accessor[T]): Accessor[T] =
     setVal(callback())
   result = getVal
 
-proc onCleanup*(x: Callback) =
+proc onCleanup*(x: Callback) {.effectsOf: x.}=
   ## Registers a function to be called when the current computation is cleaned
   listener.cleanups &= x
 
@@ -178,6 +180,20 @@ template select*(s: Accessor, selector: untyped): Accessor =
   createMemo do ():
     let it = s()
     selector
+
+macro performsRead*(x: proc): bool =
+  ## Returns true if `proc` `x` reads a signal. If the `proc` has `RootEffect` then
+  ## thats also considered reading a signal because its unknown if it does.
+  ## Used for optimisation purposes such as eliding effects
+  if x.kind != nnkSym:
+    "Must be a symbol passed".error(x)
+  let list = x.getTagsList()
+  result = newLit false
+  for tag in list:
+    # It's very important we are pessimesitc about effects since we don't want to say that something
+    # doesn't perform a read just because the compiler says it doesn't know
+    if tag.eqIdent(bindSym"ReadEffect") or tag.eqIdent("UncomputedEffects") or tag.eqIdent(bindSym"RootEffect"):
+      return newLit true
 
 when defined(js):
   export jsset
