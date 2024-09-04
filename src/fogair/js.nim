@@ -10,8 +10,10 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
   # Return a proc which will create it
   let id = ident name
   result = quote do:
-    proc `id`*(): `kind` =
-      `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
+    # Saved 2kb by using templates. Seems Nim's codegen
+    # doesn't play well with tersers mangler
+    template `id`*(): `kind` =
+      document.createElement(when `name` == "tdiv": "div" else: `name`)
 
 # Basic elements
 registerElement("tdiv", BaseElement)
@@ -72,8 +74,6 @@ macro jsHandler*(handler: typedesc[proc]): typedesc =
   result = options[0]
   for option in options[1 .. ^1]:
     result = nnkPar.newTree(nnkInfix.newTree(ident"or", result, option))
-  echo result.toStrLit
-  echo result.treeRepr
 
 proc insert*(box, value, current: Element): Element =
   ## Inserts a single widget. Replaces the old widget if possible
@@ -128,7 +128,7 @@ proc registerEvent*(elem: EventTarget, name: cstring, callback: (proc ())) =
   onCleanup do ():
     elem.removeEventListener(name, cast[proc (ev: Event)](callback))
 
-proc registerEvent*(elem: EventTarget, name: cstring, callback: (proc (ev: Event))) =
+proc registerEvent*[E: Event](elem: EventTarget, name: cstring, callback: (proc (ev: E))) =
   elem.addEventListener(name, cast[proc (ev: Event)](callback))
 
   onCleanup do ():
@@ -407,8 +407,8 @@ proc processComp(x: NimNode): NimNode =
   result = "Element".ident().newCall(compGen)
 
 macro gui*(body: untyped): Element =
+  ## TODO: Error if there are multiple elements
   result = processNode(body[0])
-  echo result.toStrLit
 
 
 when isMainModule:

@@ -20,5 +20,5 @@ type
     loading*: cstring
 
 
-proc form(btn: ButtonElement): dom.FormElement {.importc: "#.form".}
-proc name*(event: Event): cstring {.importc: "#.name".}
+proc form(btn: ButtonElement): dom.FormElement {.importjs: "#.form".}
+proc name*(event: Event): cstring {.importjs: "#.name".}
