@@ -383,8 +383,8 @@ proc processComp(x: NimNode): NimNode =
       props &= arg
   # Node that will return the component
   let
-    widget = genSym(nskLet, "widget")
-    compGen = newStmtList(newLetStmt(widget, init)) # TODO: Wrap in blockstmt
+    widget = ident("widget")
+    compGen = newStmtList(newLetStmt(widget, init))
   # Native elements need each property to be assigned
   # Non native elements need the props passed to the call
   if native:
@@ -440,7 +440,12 @@ proc processComp(x: NimNode): NimNode =
   if refVar != nil:
     compGen &= nnkAsgn.newTree(refVar, widget)
   compGen &= widget
-  result = "Element".ident().newCall(compGen)
+  # Sometimes the body is just a call. Optimise this into just the call
+  if compGen.len == 2:
+    echo compGen.treeRepr
+    result = "Element".ident().newCall(compGen[0][0][2])
+  else:
+    result = "Element".ident().newCall(nnkBlockStmt.newTree(newEmptyNode(), compGen))
 
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
