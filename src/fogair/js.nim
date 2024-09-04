@@ -84,7 +84,7 @@ proc insert*(box, value, current: Element): Element =
   result = value
 
 proc insert*(box, value: Element, prev: Accessor[Element]): Element =
-  box.insert(value, nil)
+  box.insert(value, Element(nil))
 
 proc remove*(child: Node) {.importcpp.}
 proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[Element] =
