@@ -6,6 +6,8 @@ else:
 import std/[macros, effecttraits]
 import std/[hashes, options]
 
+# TODO: Rename to signals
+
 type
   NativeSet[T] = (when defined(js): JSSet[T] else: HashSet[T])
 
@@ -133,10 +135,14 @@ template staticSignal[T](val: T): Accessor[T] =
   fakeGet
 
 proc createSignal*[T](init: T): Signal[T] =
+  bind hash
   var subscribers = initNativeSet[Computation]()
   const hasVal = T isnot void
   when hasVal:
     var value = init
+  # TODO: See why this gives undeclared identifier
+  # bind isn't working
+  bind ReadEffect
   let read = proc (): T {.tags: [ReadEffect].}=
     # Add the current context to our subscribers.
     # This is done so we only rerender the closest context needed
@@ -146,9 +152,8 @@ proc createSignal*[T](init: T): Signal[T] =
 
   let write = proc (newVal: T) =
     when hasVal:
-      # Do nothing if they are the same
-      when compiles(newVal == value):
-        if newVal == value: return
+      # Don't update if its the same value
+      if value == newVal: return
       value = newVal
     # Run every context that is subscribed
     let old = subscribers
@@ -158,7 +163,9 @@ proc createSignal*[T](init: T): Signal[T] =
   return (read, write)
 
 proc inc*[T: SomeInteger](signal: Signal[T], amount: T = 1) =
-  signal.set(signal.get() + amount)
+  ## Increments a value. This doesn't subscribe to the signal
+  untrack:
+    signal.set(signal.get() + amount)
 
 proc createEffect*(callback: proc ()) {.effectsOf: callback.}=
   ## Wrapper around initComputation
@@ -175,11 +182,6 @@ proc createMemo*[T](callback: Accessor[T]): Accessor[T] {.effectsOf: callback.}=
 proc onCleanup*(x: Callback) {.effectsOf: x.}=
   ## Registers a function to be called when the current computation is cleaned
   listener.cleanups &= x
-
-template select*(s: Accessor, selector: untyped): Accessor =
-  createMemo do ():
-    let it = s()
-    selector
 
 macro performsRead*(x: proc): bool =
   ## Returns true if `proc` `x` reads a signal. If the `proc` has `RootEffect` then

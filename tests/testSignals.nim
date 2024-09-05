@@ -34,29 +34,6 @@ test "Void signal can be used":
 
   check timesCalled == 11
 
-test "Basic selector for data store":
-  type
-    Person = object
-      name: string
-      age: int
-    Classroom = object
-      teacher: Person
-      students: seq[Person]
-
-  let school = createStore(
-    Classroom(
-      teacher: Person(name: "Greg", age: 47),
-      students: @[
-          Person(name: "John", age: 18),
-          Person(name: "Jack", age: 20),
-          Person(name: "Joe", age: 19)
-      ]
-    )
-  )
-
-  let students = school.select(it.students)
-
-
 test "untrack stops subscriptions":
   let (read, write) = createSignal(0)
   var timesCalled = 0
