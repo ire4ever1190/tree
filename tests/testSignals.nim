@@ -1,5 +1,5 @@
-import signal
-import store
+import fogair/signal
+import fogair/store
 import std/unittest
 
 
