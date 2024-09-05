@@ -28,4 +28,4 @@ jobs:
       run: nimble test
 
     - name: Test doc examples
-      run: nimble doc --warningAsError:BrokenLink:on --project src/fogair.nim
+      run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/fogair.nim
