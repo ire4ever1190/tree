@@ -56,3 +56,46 @@ test "Cleanups are called":
   for i in 0..<n:
     setCount(i)
   check times == n - 1
+
+suite "Context":
+  type
+    Foo = ref object of Context
+      value: int
+  test "Add to context without parent":
+    addContext(Foo(value: 1))
+
+  test "Add to context with parent":
+    createEffect do ():
+      addContext(Foo(value: 1))
+
+  test "Can get value from current context":
+    createEffect do ():
+      addContext(Foo(value: 10))
+      check getContext(Foo).value == 10
+
+  test "Can get value from parent context":
+    createEffect do ():
+      addContext(Foo(value: 1))
+      createEffect do ():
+        check getContext(Foo).value == 1
+      check getContext(Foo).value == 1
+
+  test "Can still get value after effect reran":
+    createEffect do ():
+      let (read, write) = createSignal(0)
+      addContext(Foo(value: 2))
+      createEffect do ():
+        discard read()
+        check getContext(Foo).value == 2
+      write(1)
+      write(1)
+      write(1)
+
+  test "Errors when it can't find context":
+    type
+      Test = ref object of Context
+    expect KeyError:
+      createEffect do ():
+        addContext(Foo(value: 0))
+        discard getContext(Test)
+

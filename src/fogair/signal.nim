@@ -38,7 +38,9 @@ type
     contexts: seq[Context]
       ## All contexts that are stored in this observer
 
-  Context = ref object of RootObj
+  Context* = ref object of RootObj
+    ## Context is custom data you can store inside an oberver.
+    ## This allows you to pass nested data down without needing to do prop drilling
 
   Computation = ref object of Observer
     ## Computation also has added callback that is called whenever the children update
@@ -52,13 +54,14 @@ var
     ## Also tracks dependencies. But by splitting it up we can
     ## turn it off to turn off tracking for a block of code
   owner*: Observer = nil
-    ## Used for tracking contexts
+    ## Used for tracking contexts (and cleanups I think)
 template observStack(body: untyped) =
   ## Stores the owner, listener and reassigns at end of body.
   ## Done so that they can be safely reassigned
   let
     prevOwner {.inject.} = owner
     prevListener {.inject.} = listener
+  # TODO: Handle parent in here so I don't forget to handle it in the children
   defer:
     owner = prevOwner
     listener = prevListener
@@ -85,6 +88,7 @@ proc initRoot*[T](body: Accessor[T]): T =
   ## when you don't want effects to bubble up
   observStack:
     owner = Computation(fn: body, children: initNativeSet[Observer]())
+    owner.parent = prevOwner
     listener = owner
     # Shouldn't register itself, we need to return a disposal function
     untrack:
@@ -111,6 +115,7 @@ proc initComputation(body: Callback, name = "") =
   observStack:
     listener = Computation(fn: body, children: initNativeSet[Observer]())
     owner = listener
+    owner.parent = prevOwner
     if prevOwner != nil:
       prevOwner.children.incl owner
     body()
@@ -196,6 +201,27 @@ macro performsRead*(x: proc): bool =
     # doesn't perform a read just because the compiler says it doesn't know
     if tag.eqIdent(bindSym"ReadEffect") or tag.eqIdent("UncomputedEffects") or tag.eqIdent(bindSym"RootEffect"):
       return newLit true
+
+proc addContext*(ctx: Context) =
+  ## Adds a value into the current context
+  if owner == nil: return # Maybe throw?
+  owner.contexts &= ctx
+
+proc getContext*[T: Context](kind: typedesc[T]): T {.raises: [KeyError].} =
+  ## Finds the first bit of context data that matches `kind` and returns it.
+  ## If it can't be found, throws a key error.
+  ##
+  ## This is untracked, if you want to subscribe to changes then send signals through
+  ## the context
+  if owner == nil: return # Maybe throw?
+  var curr = owner
+  while curr != nil:
+    for ctx in curr.contexts:
+      if ctx of T:
+        return T(ctx)
+    # Now we check the parent
+    curr = curr.parent
+  raise (ref KeyError)(msg: "Can't find any context data for " & $T)
 
 when defined(js):
   export jsset
