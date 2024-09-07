@@ -25,13 +25,13 @@ registerElement("ol", ButtonElement)
 registerElement("li", ButtonElement)
 registerElement("a", AElement)
 registerElement("img", ImgElement)
-registerElement("p", BaseElement)
 # Form elements
 registerElement("input", InputElement)
 registerElement("select", BaseElement)
 registerElement("option", OptionElement)
 
 # Textual elements
+registerElement("p", BaseElement)
 registerElement("h1", BaseElement)
 registerElement("h2", BaseElement)
 registerElement("h3", BaseElement)
@@ -44,7 +44,7 @@ proc isBuiltIn(name: string | NimNode): bool =
   for key, _ in builtinElements:
     if key.eqIdent(name): return true
 
-proc text*(val: string): Element =
+proc text*(val: cstring): Element =
   Element(document.createTextNode(val))
 
 proc text*(val: Accessor[string]): Element {.effectsOf: val.}=
