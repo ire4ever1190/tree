@@ -54,7 +54,7 @@ discard document.getElementById("{divName}").insert(Example)
 
 {rawHTML("</details>")}
 
-{rawHTML("<script defer src=\"" & $jsFile.splitFile().name & ".js\"></script>")}
+{rawHTML("<script type=module defer src=\"" & $jsFile.splitFile().name & ".js\"></script>")}
 
 {rawHTML("<div id=" & divName & " style=\"border: 1px solid var(--border);background-color: var(--secondary-background);padding: 1em;\"></div>")}
 
