@@ -29,3 +29,10 @@ jobs:
 
     - name: Test doc examples
       run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/fogair.nim
+
+    - name: Compile examples
+      run: |
+        for file in examples/*.nim
+        do
+          nim c $file
+        done

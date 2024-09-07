@@ -12,7 +12,7 @@ macro registerElement(name: static[string], kind: typedesc): untyped =
   result = quote do:
     # Saved 2kb by using templates. Seems Nim's codegen
     # doesn't play well with tersers mangler
-    proc `id`*(): `kind` =
+    template `id`*(): `kind` =
       `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
 
 # Basic elements
@@ -47,10 +47,11 @@ proc isBuiltIn(name: string | NimNode): bool =
 proc text*(val: string): Element =
   Element(document.createTextNode(val))
 
-proc text*(val: Accessor[string]): Element =
-  result = text(val())
+proc text*(val: Accessor[string]): Element {.effectsOf: val.}=
+  let elem = text(val())
   createEffect do ():
-    result.innerText = cstring(val())
+    elem.innerText = cstring(val())
+  elem
 
 proc add(elem: Element, child: Element) =
   if child != nil:
@@ -253,6 +254,30 @@ let items = block:
 The proc means the loop variable is properly captured (So that semantics operate how you expect)
 and also solves the issue with not being able to capture lents. This also paves the way for wrapping
 each item in an `initRoot` so that can we key arrays
+
+Try/Except
+==========
+Finally is not supported since it doesn't make sense
+```
+try:
+  # Some code
+except:
+  # Error code
+```
+into
+```
+let item = block:
+  let (curr, setCurr) = createSignal[Element](nil)
+  try:
+    setCurr:
+      # Some code
+  except:
+    setCurr:
+      # Error code
+  curr()
+```
+This will get wrapped in a createMemo. Reason for the signal is that the except block might get called
+afterwards (Maybe some handler raises an exception)
 ]#
 
 proc processComp(x: NimNode): NimNode
@@ -260,6 +285,7 @@ proc processIf(x: NimNode): NimNode
 proc processLoop(x: NimNode): NimNode
 proc processCase(x: NimNode): NimNode
 proc processStmts(x: NimNode): NimNode
+proc processTryExcept(x: NimNode): NimNode
 
 proc processNode(x: NimNode): NimNode =
   case x.kind
@@ -280,6 +306,8 @@ proc processNode(x: NimNode): NimNode =
     x.processStmts()
   of nnkLetSection:
     x
+  of nnkTryStmt:
+    x.processTryExcept()
   else:
     ("Unexpected statement: " & $x.kind).error(x)
 
@@ -352,6 +380,13 @@ proc processCase(x: NimNode): NimNode =
       branch[^1] = rootCall
     result &= branch
 
+proc processTryExcept(x: NimNode): NimNode =
+  x.expectKind(nnkTryStmt)
+  result = x
+  result[0] = result[0].processNode()
+  for i in 1 ..< x.len:
+    result[i][^1] = result[i][^1].processNode()
+
 proc generateAsgn(widget, prop, value: NimNode): NimNode =
   ## Generates an assignment.
   ## Optimises static values to not be wrapped in an effect
@@ -410,10 +445,10 @@ proc processComp(x: NimNode): NimNode =
         compGen &= newCall(ident"registerEvent", widget, newCall("cstring", signalName), child.name)
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
-      of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt: # Other supported nodes
+      of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt, nnkTryStmt: # Other supported nodes
         # TODO: Check if I pass lastWidget for if and case statements.
         # Since if they return nil, what do we replace with when not null???
-        if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt}:
+        if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt, nnkTryStmt}:
           hasComplexStmt = true
         children &= child
       else:
@@ -443,9 +478,9 @@ proc processComp(x: NimNode): NimNode =
   if refVar != nil:
     compGen &= nnkAsgn.newTree(refVar, widget)
   compGen &= widget
-  # Sometimes the body is just a call. Optimise this into just the call
+  # Sometimes the body is just a call. Optimise this into just the call.
+  # Noticed that the block statement added some weirdness in the codegen
   if compGen.len == 2:
-    echo compGen.treeRepr
     result = "Element".ident().newCall(compGen[0][0][2])
   else:
     result = "Element".ident().newCall(nnkBlockStmt.newTree(newEmptyNode(), compGen))
@@ -453,7 +488,6 @@ proc processComp(x: NimNode): NimNode =
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
-  echo result.toStrLit
 
 
 when isMainModule:

@@ -8,7 +8,7 @@ type
     wires: Signal[void]
     data: T
 
-proc createStore*[T](init: T): Store[T] =
+proc createStore*[T](init: T = default(T)): Store[T] =
   result = Store[T]()
   result.wires = createSignal[void]()
   result.data = init
