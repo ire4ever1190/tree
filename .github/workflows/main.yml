@@ -16,7 +16,9 @@ jobs:
     name: Nim ${{ matrix.nim }} test
     steps:
     - name: Setup Nim Enviroment
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - uses: jiro4989/setup-nim-action@v2
       with:
@@ -36,3 +38,43 @@ jobs:
         do
           nim c $file
         done
+
+  deploy:
+    name: "Deploy Documentation"
+    permissions:
+      pages: write # To deploy to Pages
+      id-token: write # Verify deployment
+      contents: read
+    runs-on: ubuntu-latest
+    # TODO: Renable when devel isn't broken anymore
+    # needs:
+      # - test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          use-nightlies: true
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          nim-version: "devel"
+
+      - name: "Install the package"
+        run: nimble install
+
+      - name: "Build documentation"
+        uses: ire4ever1190/nim-docs-action@v1
+        with:
+          main-file: "src/fogair.nim"
+
+      # Temp while the repo is private
+      # TODO: Use github pages
+      - name: "Deploy to netlify"
+        run: |
+          zip -r site.zip site/*
+          curl \
+            https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_ID }}/deploys \
+            -H "Authorization: Bearer ${{ secrets.NETLIFY_TOKEN }}" \
+            -H "Content-Type: application/zip" \
+            -XPOST --data-binary "@site.zip"

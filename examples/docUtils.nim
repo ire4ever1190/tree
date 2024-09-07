@@ -4,6 +4,8 @@ proc indentLevel(x: string): int =
   while result < x.len and x[result] in Whitespace:
     result += 1
 
+import std/compilesettings
+
 proc rawHTML(html: string): string =
   ## Inserts raw html into the page
   result = ".. raw:: html\n" & html.indent(2)
@@ -12,6 +14,7 @@ const counter = CacheCounter"ExampleCounter"
 
 macro example*(body: untyped): untyped =
   ## Writes out doc comments that include the source code and a bit of HTML of run the example.
+  ## This is like runnableExamples, except it runs on the users browser
   # TODO: Should I run the code in an iFrame?
   # Find the portion of code that corresponds to the example
   let info = body.lineInfoObj
@@ -38,7 +41,7 @@ macro example*(body: untyped): untyped =
       output &= line.dedent(indent) & '\n'
   output = output.strip()
   let
-    jsFile = (info.filename.Path.splitPath().head / tempFile.splitPath().tail).changeFileExt("js")
+    jsFile = (querySetting(outDir).Path / tempFile.splitPath().tail).changeFileExt("js")
     divName = "exampleDiv" & $exampleNum
   writeFile(tempFile.string, output & fmt"""
 # Extra code to actual render it
@@ -48,13 +51,13 @@ discard document.getElementById("{divName}").insert(Example)
   # TODO: Fix line-numbers option in the CSS
   result = newCommentStmtNode(fmt"""
 {rawHTML("<details><summary>Nim code</summary>")}
-```nim test
+```nim test number-lines
 {output}
 ```
 
 {rawHTML("</details>")}
 
-{rawHTML("<script type=module defer src=\"" & $jsFile.splitFile().name & ".js\"></script>")}
+{rawHTML("<script type=module async src=\"" & $jsFile.splitFile().name & ".js\"></script>")}
 
 {rawHTML("<div id=" & divName & " style=\"border: 1px solid var(--border);background-color: var(--secondary-background);padding: 1em;\"></div>")}
 
