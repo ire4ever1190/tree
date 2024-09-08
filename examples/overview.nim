@@ -69,7 +69,7 @@ example:
                 var newItems: seq[Todo] = @[]
                 for i in 0 ..< list().len:
                   if i != idx:
-                    newItems &= item
+                    newItems &= list()[i]
                 setList(newItems)
 
 const todoApp = initExampleBlock("todo", "-b:js")
