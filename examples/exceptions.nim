@@ -1,4 +1,6 @@
 ##[
+  # Example: Exceptions
+
   This is an example on how exceptions work.
 
   Due to how exception handling works in Nim, this only catches exceptions that are thrown during the creation of

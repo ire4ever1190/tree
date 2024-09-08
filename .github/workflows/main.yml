@@ -67,6 +67,7 @@ jobs:
         uses: ire4ever1190/nim-docs-action@v1
         with:
           main-file: "src/fogair.nim"
+          extra-files: "examples/exceptions.nim"
 
       # Temp while the repo is private
       # TODO: Use github pages
