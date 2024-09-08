@@ -53,9 +53,10 @@ macro multiBlock*(part: static[ExampleBlock], body: untyped): untyped =
     codeBlocks[key] = newStmtList()
   let output = body.readCode()
   codeBlocks[key] &= newLit output
+  # Enable number-lines when PR is merged
   return newCommentStmtNode(fmt"""
 
-```nim number-lines
+```nim
 {output}
 ```
 
@@ -69,9 +70,12 @@ proc makeTempFile(fileName: string | Path): Path =
   appdirs.getTempDir() / Path fmt"temp{fileName}_{exampleNum}.nim"
 
 macro checkMultiBlock*(part: static[ExampleBlock]) =
+  ## Should be called at the end of the blocks.
+  ## This compiles the code and checks it works
   let key = part.key()
 
   var output = ""
+  # Better to just ignore empty blocks than error
   if key notin codeBlocks: return
   for blk in codeBlocks[key]:
     output &= blk.strVal & "\n"
