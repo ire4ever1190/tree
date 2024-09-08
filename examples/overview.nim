@@ -67,9 +67,10 @@ example:
               proc click(ev: Event) =
                 # Filter out the current item
                 var newItems: seq[Todo] = @[]
-                for i in 0 ..< list().len:
+                let currItems = list()
+                for i in 0 ..< currItems.len:
                   if i != idx:
-                    newItems &= list()[i]
+                    newItems &= currItems[i]
                 setList(newItems)
 
 const todoApp = initExampleBlock("todo", "-b:js")
