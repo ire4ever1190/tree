@@ -63,13 +63,16 @@ example:
         legend:
           text("TODO list")
         ItemAdder()
-        for item in list():
+        for i, item in list():
           tdiv:
             input(`type` = "checkbox", id = $item.id, checked=item.completed):
               proc change(ev: Event) =
-                # This isn't good practise since it won't cause rerenders.
-                # But this simplifies the demo
-                item.completed = ev.target.checked
+                # Filter out the current item
+                var newItems: seq[Todo] = @[]
+                for i in 0 ..< list().len:
+                  if i != item.id:
+                    newItems &= item
+                setList(newItems)
 
             label(`for` = $item.id):
               text(item.title)

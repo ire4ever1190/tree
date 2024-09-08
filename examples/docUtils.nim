@@ -113,7 +113,7 @@ discard document.getElementById("{divName}").insert(Example)
 
 {rawHTML("<script type=module async src=\"" & $jsFile.splitFile().name & ".js\"></script>")}
 
-{rawHTML("<div id=" & divName & " style=\"border: 1px solid var(--border);background-color: var(--secondary-background);padding: 1em;\"></div>")}
+{rawHTML("<div id=" & divName & " style=\"all: unset\"></div>")}
 
   """)
 
