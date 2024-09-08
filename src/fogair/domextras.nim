@@ -6,6 +6,7 @@ type
 
   AElement* {.importc.} = ref object of Element
     href*: cstring
+
   ButtonElement* {.importc.} = ref object of BaseElement
     autofocus: bool
     formaction: cstring
@@ -16,9 +17,13 @@ type
     # TODO: popover stuff
     `type`: cstring
     value: cstring
+
   ImgElement* {.importc.} = ref object of ImageElement
     loading*: cstring
 
+  LabelElement* {.importc.} = ref object of BaseElement
+    `for`*: cstring
 
 proc form(btn: ButtonElement): dom.FormElement {.importjs: "#.form".}
 proc name*(event: Event): cstring {.importjs: "#.name".}
+proc `kind=`*(e: InputElement, kind: cstring) {.importjs: "#.type = #".}

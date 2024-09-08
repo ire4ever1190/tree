@@ -34,6 +34,46 @@ multiBlock start:
   Now lets build a TODO app!
 ]##
 
+example:
+  import src/fogair
+  import std/sequtils
+
+  type
+    Todo = ref object
+      id: int
+      title: string
+      completed: bool
+
+  let (list, setList) = createSignal[seq[Todo]](@[])
+
+  proc ItemAdder(): Element =
+    var inputElem: InputElement
+    gui:
+      tdiv:
+        input(ref inputElem)
+        button():
+          proc click() =
+            setList(list() & Todo(id: 1, title: $inputElem.value))
+          text("Add TODO")
+
+
+  proc Example(): Element =
+    gui:
+      fieldset:
+        legend:
+          text("TODO list")
+        ItemAdder()
+        for item in list():
+          tdiv:
+            input(`type` = "checkbox", id = $item.id, checked=item.completed):
+              proc change(ev: Event) =
+                # This isn't good practise since it won't cause rerenders.
+                # But this simplifies the demo
+                item.completed = ev.target.checked
+
+            label(`for` = $item.id):
+              text(item.title)
+
 const todoApp = initExampleBlock("todo", "-b:js")
 
 checkMultiBlock(start)
