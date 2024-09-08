@@ -25,10 +25,13 @@ registerElement("ol", ButtonElement)
 registerElement("li", ButtonElement)
 registerElement("a", AElement)
 registerElement("img", ImgElement)
+registerElement("fieldset", BaseElement)
+registerElement("legend", BaseElement)
 # Form elements
 registerElement("input", InputElement)
 registerElement("select", BaseElement)
 registerElement("option", OptionElement)
+registerElement("label", LabelElement)
 
 # Textual elements
 registerElement("p", BaseElement)
@@ -488,6 +491,7 @@ proc processComp(x: NimNode): NimNode =
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
+  echo result.toStrLit
 
 
 when isMainModule:
