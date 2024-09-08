@@ -102,10 +102,10 @@ macro example*(body: untyped): untyped =
 discard document.getElementById("{divName}").insert(Example)
 """)
   echo staticExec(fmt"{getCurrentCompilerExe()} js -d:elementID=idk -d:release --out:{jsFile} {tempFile}")
-
+  # Enable number-lines when PR is merged
   result = newCommentStmtNode(fmt"""
 {rawHTML("<details><summary>Nim code</summary>")}
-```nim test number-lines
+```nim test
 {output}
 ```
 

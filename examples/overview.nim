@@ -34,6 +34,9 @@ multiBlock start:
   Now lets build a TODO app!
 ]##
 
+const todoApp = initExampleBlock("todo", "-b:js")
+
+
 example:
   import fogair
   import std/sequtils
@@ -73,6 +76,7 @@ example:
                     newItems &= currItems[i]
                 setList(newItems)
 
-const todoApp = initExampleBlock("todo", "-b:js")
+checkMultiBlock(todoApp)
 
 checkMultiBlock(start)
+
