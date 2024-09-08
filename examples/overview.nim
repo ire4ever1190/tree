@@ -35,7 +35,7 @@ multiBlock start:
 ]##
 
 example:
-  import src/fogair
+  import fogair
   import std/sequtils
 
   type
