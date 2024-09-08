@@ -56,26 +56,23 @@ example:
             setList(list() & Todo(id: 1, title: $inputElem.value))
           text("Add TODO")
 
-
   proc Example(): Element =
     gui:
       fieldset:
         legend:
           text("TODO list")
         ItemAdder()
-        for i, item in list():
-          tdiv:
-            input(`type` = "checkbox", id = $item.id, checked=item.completed):
-              proc change(ev: Event) =
+        ul:
+          for i, item in list():
+            li:
+              text(item.title)
+              proc click(ev: Event) =
                 # Filter out the current item
                 var newItems: seq[Todo] = @[]
                 for i in 0 ..< list().len:
                   if i != item.id:
                     newItems &= item
                 setList(newItems)
-
-            label(`for` = $item.id):
-              text(item.title)
 
 const todoApp = initExampleBlock("todo", "-b:js")
 
