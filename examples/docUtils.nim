@@ -72,6 +72,7 @@ macro checkMultiBlock*(part: static[ExampleBlock]) =
   let key = part.key()
 
   var output = ""
+  if key notin codeBlocks: return
   for blk in codeBlocks[key]:
     output &= blk.strVal & "\n"
 
