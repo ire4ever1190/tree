@@ -37,7 +37,8 @@ proc readCode(blk: NimNode): string =
     if lineNum == info.line:
       indent = line.indentLevel()
     if lineNum >= info.line:
-      # Stop if we encounter code that is not relevant
+      # If the indent level has decreased, then it means we have encountered code
+      # that is outside our code block
       if line.indentLevel() == 0 and line.len >= 0 and not line.isEmptyOrWhitespace():
         break
       result &= line.dedent(indent) & '\n'
