@@ -40,9 +40,7 @@ example:
 
   type
     Todo = ref object
-      id: int
       title: string
-      completed: bool
 
   let (list, setList) = createSignal[seq[Todo]](@[])
 
@@ -53,7 +51,7 @@ example:
         input(ref inputElem)
         button():
           proc click() =
-            setList(list() & Todo(id: 1, title: $inputElem.value))
+            setList(list() & Todo(title: $inputElem.value))
           text("Add TODO")
 
   proc Example(): Element =
@@ -63,14 +61,14 @@ example:
           text("TODO list")
         ItemAdder()
         ul:
-          for i, item in list():
+          for idx, item in list():
             li:
               text(item.title)
               proc click(ev: Event) =
                 # Filter out the current item
                 var newItems: seq[Todo] = @[]
                 for i in 0 ..< list().len:
-                  if i != item.id:
+                  if i != idx:
                     newItems &= item
                 setList(newItems)
 
