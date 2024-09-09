@@ -17,9 +17,11 @@ macro testFile(title, srcFile: static[string]): untyped =
 
     jsFile = srcFile.Path().changeFileExt("js")
     htmlFile = currentSourcePath.Path.parentDir() / Path"pages/index.html"
+    nimFile = currentSourcePath.Path.parentDir() / Path"pages" / Path(srcFile)
   # Add test for compiling
   let compileCode = quote:
-    let (`outputSym`, `exitCodeSym`) = execCmdEx(getCurrentCompilerExe() & " js -d:buildPage pages/" & `srcFile`)
+    # TODO: Compile using nimble so that the current src version is used
+    let (`outputSym`, `exitCodeSym`) = execCmdEx(getCurrentCompilerExe() & " js -d:buildPage " & string(`nimFile`))
 
   let compileTest = quote:
     test "Compile " & `srcFile`:

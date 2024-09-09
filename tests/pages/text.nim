@@ -19,8 +19,8 @@ else:
 
   proc tests*(d: FirefoxDriver) {.async.} =
     test "Command Call":
-      check d.getElementText(d.getElementBySelector("#commandCall").await()).await() == "Hello"
+      check d.selectorText("#commandCall").await() == "Hello"
 
 
     test "Function call":
-      check d.getElementText(d.getElementBySelector("#functionCall").await()).await() == "World"
+      check d.selectorText("#functionCall").await() == "World"

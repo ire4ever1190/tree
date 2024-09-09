@@ -10,4 +10,4 @@ srcDir        = "src/"
 # Dependencies
 
 requires "nim >= 2.0.0"
-taskRequires "https://github.com/yglukhov/webdriver#f29958a"
+taskRequires "test", "https://github.com/yglukhov/webdriver#f29958a"
