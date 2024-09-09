@@ -7,6 +7,9 @@ type
     file*: string
     args*: string
 
+when not compiles($Path"Test"):
+  proc `$`(x: Path): string = x.string
+
 proc indentLevel(x: string): int =
   while result < x.len and x[result] in Whitespace:
     result += 1
