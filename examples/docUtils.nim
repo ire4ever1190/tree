@@ -7,6 +7,7 @@ type
     file*: string
     args*: string
 
+# This isn't in stable, but I want to make sure the examples still work
 when not compiles($Path"Test"):
   proc `$`(x: Path): string = x.string
 

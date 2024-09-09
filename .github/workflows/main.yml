@@ -26,9 +26,6 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           nim-version: ${{ matrix.nim }}
 
-    - name: Install library
-      run: nimble install
-
     - name: Run Tests
       run: nimble test
 
