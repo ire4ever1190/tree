@@ -26,11 +26,14 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           nim-version: ${{ matrix.nim }}
 
-    - name: Run Tests
+    - name: Run tests
       run: nimble test
 
     - name: Test doc examples
       run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/fogair.nim
+
+    - name: Install library
+      run: nimble install -y
 
     - name: Compile examples
       run: |
