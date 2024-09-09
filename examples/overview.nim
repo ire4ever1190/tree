@@ -19,7 +19,7 @@ multiBlock start:
 ##[
   This can then be combined with [createEffect] to get something that is actually usable.
   `createEffect` will track the signals that it is dependent on and will then rerun when
-  the value of any signal changes
+  the value of any signal changes (It also runs when initially created, this is so it can find its dependencies)
 ]##
 
 multiBlock start:
