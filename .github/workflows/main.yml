@@ -50,9 +50,8 @@ jobs:
       id-token: write # Verify deployment
       contents: read
     runs-on: ubuntu-latest
-    # TODO: Renable when devel isn't broken anymore
-    # needs:
-      # - test
+    needs:
+      - test
     steps:
       - uses: actions/checkout@v4
         with:
