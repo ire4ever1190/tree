@@ -2,6 +2,8 @@ import std/[strformat, os, osproc, unittest, asyncdispatch, paths]
 import std/macros
 import pkg/webdriver/firefox
 
+from pages/utils import updateSuiteName
+
 macro testFile(title, srcFile: static[string]): untyped =
   ## Tests a file.
   ## File should contain two blocks of code where the JS code gets enabled when `buildPage` is defined
@@ -43,6 +45,7 @@ macro testFile(title, srcFile: static[string]): untyped =
   result = quote:
     `importStmt`
     suite `title`:
+      updateSuiteName(`title`)
       # Always compile the code, but only check the compile if that test is ran
       `compileCode`
       `compileTest`
@@ -50,7 +53,7 @@ macro testFile(title, srcFile: static[string]): untyped =
       waitFor `driverSym`.setUrl("file://" & string(`htmlFile`) & "?file=" & string(`jsFile`))
       # Run tests
       waitFor `moduleSym`.tests(`driverSym`)
-
+    updateSuiteName("")
 # Start up the browser
 let driver = newFirefoxDriver()
 waitFor driver.startSession(headless=true)

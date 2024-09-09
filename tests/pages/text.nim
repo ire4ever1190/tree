@@ -6,7 +6,7 @@ when defined(buildPage):
 
   proc App(): Element =
     gui:
-      tdiv(id="app"):
+      tdiv:
         p(id="commandCall"):
           text "Hello"
         p(id="functionCall"):
@@ -20,7 +20,6 @@ else:
   proc tests*(d: FirefoxDriver) {.async.} =
     test "Command Call":
       check d.selectorText("#commandCall").await() == "Hello"
-
 
     test "Function call":
       check d.selectorText("#functionCall").await() == "World"
