@@ -58,10 +58,9 @@ macro multiBlock*(part: static[ExampleBlock], body: untyped): untyped =
     codeBlocks[key] = newStmtList()
   let output = body.readCode()
   codeBlocks[key] &= newLit output
-  # Enable number-lines when PR is merged
   return newCommentStmtNode(fmt"""
 
-```nim
+```nim number-lines
 {output}
 ```
 
@@ -112,10 +111,9 @@ macro example*(body: untyped): untyped =
 discard document.getElementById("{divName}").insert(Example)
 """)
   echo staticExec(fmt"{getCurrentCompilerExe()} js -d:elementID=idk -d:release --out:{jsFile} {tempFile}")
-  # Enable number-lines when PR is merged
   result = newCommentStmtNode(fmt"""
 {rawHTML("<details><summary>Nim code</summary>")}
-```nim test
+```nim test number-lines
 {output}
 ```
 
