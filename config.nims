@@ -1,1 +1,3 @@
-# switch("backend", "js")
+when defined(docgen):
+  switch("backend", "js")
+  switch("d", "danger")
