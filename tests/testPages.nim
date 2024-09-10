@@ -65,6 +65,7 @@ waitFor driver.startSession(headless=true)
 testFile "Text Elements", "text.nim"
 testFile "For Loops", "forLoop.nim"
 testFile "If Expressions", "ifExpr.nim"
+testFile "Case Expressions", "caseExpr.nim"
 
 # Clean up
 waitFor driver.close()
