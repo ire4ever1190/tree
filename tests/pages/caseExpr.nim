@@ -23,12 +23,13 @@ when defined(js):
             text "Green"
           of Blue:
             text "Blue"
-        # Make sure that an else branch is generated
-        # TODO: Make this work
+        # Make sure that an else branch is handled
         case colour()
         of Green:
           p(id="onlyGreen"):
             text "It's not green"
+        else:
+          discard
 
 
   discard document.getElementById("root").insert(App)
