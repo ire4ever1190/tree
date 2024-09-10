@@ -4,7 +4,8 @@ type
     Green
     Blue
 
-when defined(buildPage):
+
+when defined(js):
   import fogair
   import std/dom
 
@@ -23,13 +24,14 @@ when defined(buildPage):
             text "Green"
           of Blue:
             text "Blue"
-        # Make sure that an else branch is generated
-        # TODO: Make this work
-        # case colour()
-        # of Green:
-          # p(id="onlyGreen"):
-            # text "It's not green"
 
+        # Make sure that an else branch is handled
+        case colour()
+        of Green:
+          p(id="onlyGreen"):
+            text "It's not green"
+        else:
+          discard
 
   discard document.getElementById("root").insert(App)
 
@@ -41,11 +43,11 @@ else:
     test "Can go through all branches":
       for c in Colour:
         # Check the secondary case expression
-        when false:
-          if c == Green:
-            check d.selectorText("#onlyGreen").await() == "It's not green"
-          else:
-            check not await d.elementExists("#onlyGreen")
+        if c == Green:
+          check d.selectorText("#onlyGreen").await() == "It's not green"
+        else:
+          check not await d.elementExists("#onlyGreen")
+       
         # Check the main case expression is correct
         check d.selectorText("#colour").await() == symbolName(c)
         await d.selectorClick("#btnInc")

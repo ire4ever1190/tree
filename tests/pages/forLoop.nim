@@ -1,4 +1,4 @@
-when defined(buildPage):
+when defined(js):
   import fogair
   import std/dom
 
