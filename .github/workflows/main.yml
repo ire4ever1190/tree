@@ -26,11 +26,14 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           nim-version: ${{ matrix.nim }}
 
-    - name: Run Tests
+    - name: Run tests
       run: nimble test
 
     - name: Test doc examples
       run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/fogair.nim
+
+    - name: Install library
+      run: nimble install -y
 
     - name: Compile examples
       run: |
@@ -40,15 +43,15 @@ jobs:
         done
 
   deploy:
+    if: github.ref == 'refs/heads/master'
     name: "Deploy Documentation"
     permissions:
       pages: write # To deploy to Pages
       id-token: write # Verify deployment
       contents: read
     runs-on: ubuntu-latest
-    # TODO: Renable when devel isn't broken anymore
-    # needs:
-      # - test
+    needs:
+      - test
     steps:
       - uses: actions/checkout@v4
         with:

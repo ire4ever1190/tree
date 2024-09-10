@@ -448,7 +448,7 @@ proc processComp(x: NimNode): NimNode =
         compGen &= newCall(ident"registerEvent", widget, newCall("cstring", signalName), child.name)
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
-      of nnkIfStmt, nnkForStmt, nnkCall, nnkCaseStmt, nnkTryStmt: # Other supported nodes
+      of nnkIfStmt, nnkForStmt, nnkCall, nnkCommand, nnkCaseStmt, nnkTryStmt: # Other supported nodes
         # TODO: Check if I pass lastWidget for if and case statements.
         # Since if they return nil, what do we replace with when not null???
         if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt, nnkTryStmt}:
@@ -491,7 +491,8 @@ proc processComp(x: NimNode): NimNode =
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
-  echo result.toStrLit
+  when defined(debugGui):
+    echo result.toStrLit
 
 
 when isMainModule:
