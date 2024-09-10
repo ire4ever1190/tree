@@ -26,7 +26,7 @@ macro testFile(title, srcFile: static[string]): untyped =
   # Add test for compiling
   let compileCode = quote:
     # TODO: Compile using nimble so that the current src version is used
-    let (`outputSym`, `exitCodeSym`) = execCmdEx(getCurrentCompilerExe() & " js -d:buildPage " & string(`nimFile`))
+    let (`outputSym`, `exitCodeSym`) = execCmdEx(getCurrentCompilerExe() & " js " & string(`nimFile`))
 
   let compileTest = quote:
     test "Compile " & `srcFile`:
