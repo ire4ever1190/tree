@@ -1,8 +1,10 @@
 import std/[strformat, os, osproc, unittest, asyncdispatch, paths]
-import std/macros
+import std/[macros, macrocache]
 import pkg/webdriver/firefox
 
 from pages/utils import updateSuiteName
+
+const testCount = CacheCounter"testNum"
 
 macro testFile(title, srcFile: static[string]): untyped =
   ## Tests a file.
@@ -14,12 +16,13 @@ macro testFile(title, srcFile: static[string]): untyped =
   let
     outputSym = genSym(nskLet, "output")
     exitCodeSym = genSym(nskLet, "exitCode")
-    moduleSym = ident"testModule"
+    moduleSym = ident ("testModule" & $testCount.value)
     driverSym = ident"driver"
 
     jsFile = srcFile.Path().changeFileExt("js")
     htmlFile = currentSourcePath.Path.parentDir() / Path"pages/index.html"
     nimFile = currentSourcePath.Path.parentDir() / Path"pages" / Path(srcFile)
+  inc testCount
   # Add test for compiling
   let compileCode = quote:
     # TODO: Compile using nimble so that the current src version is used
@@ -60,6 +63,7 @@ waitFor driver.startSession(headless=true)
 
 # Run all the page tests
 testFile "Text Elements", "text.nim"
+testFile "For Loops", "forLoop.nim"
 
 # Clean up
 waitFor driver.close()
