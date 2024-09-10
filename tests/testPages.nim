@@ -64,6 +64,7 @@ waitFor driver.startSession(headless=true)
 # Run all the page tests
 testFile "Text Elements", "text.nim"
 testFile "For Loops", "forLoop.nim"
+testFile "If Expressions", "ifExpr.nim"
 
 # Clean up
 waitFor driver.close()
