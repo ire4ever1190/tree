@@ -1,0 +1,15 @@
+<html>
+<head>
+  <title>⚠️ Testing Grounds ⚠️</title>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+<script>
+// Load in the script that is getting referenced
+const urlParams = new URLSearchParams(window.location.search)
+const scriptElem = document.createElement("script")
+scriptElem.src = urlParams.get('file')
+document.head.appendChild(scriptElem)
+</script>
+</html>
