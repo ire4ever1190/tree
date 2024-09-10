@@ -4,6 +4,7 @@ type
     Green
     Blue
 
+
 when defined(js):
   import fogair
   import std/dom
@@ -23,6 +24,7 @@ when defined(js):
             text "Green"
           of Blue:
             text "Blue"
+
         # Make sure that an else branch is handled
         case colour()
         of Green:
@@ -30,7 +32,6 @@ when defined(js):
             text "It's not green"
         else:
           discard
-
 
   discard document.getElementById("root").insert(App)
 
@@ -46,6 +47,7 @@ else:
           check d.selectorText("#onlyGreen").await() == "It's not green"
         else:
           check not await d.elementExists("#onlyGreen")
+       
         # Check the main case expression is correct
         check d.selectorText("#colour").await() == symbolName(c)
         await d.selectorClick("#btnInc")
