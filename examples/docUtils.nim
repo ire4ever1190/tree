@@ -56,11 +56,16 @@ macro multiBlock*(part: static[ExampleBlock], body: untyped): untyped =
   let key = part.key()
   if key notin codeBlocks:
     codeBlocks[key] = newStmtList()
+  # Find find line we are up to
+  var lines = 0
+  for blk in codeBlocks[key]:
+    lines += blk.strVal.countLines()
+
   let output = body.readCode()
   codeBlocks[key] &= newLit output
   return newCommentStmtNode(fmt"""
 
-```nim number-lines
+```nim number-lines={lines + 1}
 {output}
 ```
 
