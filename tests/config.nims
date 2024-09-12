@@ -1,2 +1,2 @@
 switch("path", "$projectDir/../src")
-# switch("backend", "js")
+switch("hintAsError", "ConvFromXtoItselfNotNeeded")
