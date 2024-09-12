@@ -1,5 +1,5 @@
 import unittest
-import fogair/signal
+import tree/signal
 
 
 let (read, write) = createSignal[void]()

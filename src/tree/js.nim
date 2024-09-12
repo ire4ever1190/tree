@@ -4,7 +4,7 @@ import ./signal, ./domextras
 
 type ElementMemo = Accessor[Element]
 
-const builtinElements = CacheTable"fogair.elements"
+const builtinElements = CacheTable"tree.elements"
 
 macro registerElement(name: static[string], kind: typedesc): untyped =
   builtinElements[name] = kind
@@ -501,5 +501,9 @@ macro gui*(body: untyped): Element =
   result = processNode(body[0])
   when defined(debugGui):
     echo result.toStrLit
+
+proc renderTo*(component: proc (): Element, id: string) =
+  ## Renders the application to an element with `id`
+  discard document.getElementById(id).insert(component)
 
 export domextras

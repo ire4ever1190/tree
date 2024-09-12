@@ -10,7 +10,7 @@
 import ./docUtils
 
 example:
-  import fogair
+  import tree
   import std/dom
 
   const defaultCount = 5

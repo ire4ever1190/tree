@@ -1,4 +1,4 @@
-import fogair/signal
+import tree/signal
 
 proc countUpdates*(body: proc ()): Accessor[int] =
   ## Returns an accessor which counts how many times body has

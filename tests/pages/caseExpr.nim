@@ -6,7 +6,7 @@ type
 
 
 when defined(js):
-  import fogair
+  import tree
   import std/dom
 
   proc App(): Element =

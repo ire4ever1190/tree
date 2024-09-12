@@ -1,4 +1,4 @@
-import fogair/store
+import tree/store
 
 import std/[unittest, sugar]
 

@@ -1,9 +1,21 @@
-Experiemnts with using SolidJS like signals except implemented in a way that doesn't tie them to the web.
+# 🌲 Tree
 
-Things I want to build
-- Frontend framework
-- GTK framework
+[![Tests](https://github.com/ire4ever1190/tree/actions/workflows/main.yml/badge.svg)](https://github.com/ire4ever1190/tree/actions/workflows/main.yml)
 
-both of which use signals
+Frontend framework based on signals. It's in the early stages, but it is usable. Don't expect a stable API at the moment.
 
-Big thanks to all the reactivity tutorials online (Espicall the ones written by Ryan Carniato)
+## Overview
+
+A "Hello World" program looks like this
+
+```nim
+import tree
+
+proc App(): Element =
+  gui:
+    text "Hello World!"
+
+App.renderTo("root")
+```
+
+Which can then be compiled with the JS backend and put into a HTML document that has an element with id "root"

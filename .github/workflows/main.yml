@@ -30,7 +30,7 @@ jobs:
       run: nimble test
 
     - name: Test doc examples
-      run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/fogair.nim
+      run: nimble doc -b:js --warningAsError:BrokenLink:on --project src/tree.nim
 
     - name: Install library
       run: nimble install -y
@@ -69,7 +69,7 @@ jobs:
       - name: "Build documentation"
         uses: ire4ever1190/nim-docs-action@v1
         with:
-          main-file: "src/fogair.nim"
+          main-file: "src/tree.nim"
           extra-files: "examples/exceptions.nim examples/overview.nim"
 
       # Temp while the repo is private

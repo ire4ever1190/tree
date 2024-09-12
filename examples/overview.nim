@@ -11,7 +11,7 @@ const start = initExampleBlock("start", "-b:js")
 ]##
 
 multiBlock start:
-  import fogair
+  import tree
   let (read, write) = createSignal(0)
   echo read() # We read by calling it like a function
   write(1) # And update it by giving it a new value
@@ -38,7 +38,7 @@ const todoApp = initExampleBlock("todo", "-b:js")
 
 
 example:
-  import fogair
+  import tree
   import std/sequtils
 
   type

@@ -1,5 +1,5 @@
 when defined(js):
-  import fogair
+  import tree
   import std/dom
 
   proc App(): Element =
@@ -20,7 +20,7 @@ when defined(js):
           p(id="whenFalse"):
             text("Its false")
 
-  discard document.getElementById("root").insert(App)
+  App.renderTo("root")
 
 else:
   import utils
