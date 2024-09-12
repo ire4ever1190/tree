@@ -2,8 +2,6 @@ when defined(js):
   import tree
   import std/dom
 
-
-
   proc App(): Element =
     let (number, setNumber) = createSignal(3)
     gui:
@@ -56,7 +54,7 @@ when defined(js):
               text($i)
 
 
-  discard document.getElementById("root").insert(App)
+  App.renderTo("root")
 
 else:
   import utils

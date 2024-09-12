@@ -33,7 +33,7 @@ when defined(js):
         else:
           discard
 
-  discard document.getElementById("root").insert(App)
+  App.renderTo("root")
 
 else:
   import utils
@@ -47,7 +47,7 @@ else:
           check d.selectorText("#onlyGreen").await() == "It's not green"
         else:
           check not await d.elementExists("#onlyGreen")
-       
+
         # Check the main case expression is correct
         check d.selectorText("#colour").await() == symbolName(c)
         await d.selectorClick("#btnInc")

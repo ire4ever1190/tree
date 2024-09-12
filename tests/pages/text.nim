@@ -10,7 +10,7 @@ when defined(js):
         p(id="functionCall"):
           text("World")
 
-  discard document.getElementById("root").insert(App)
+  App.renderTo("root")
 
 else:
   import utils
