@@ -1,5 +1,6 @@
-import std/[macros, strformat, dom, macrocache, asyncjs, sequtils]
+import std/[macros, dom, macrocache, sequtils]
 import ./signal, ./domextras
+
 
 type ElementMemo = Accessor[Element]
 
@@ -47,10 +48,14 @@ proc isBuiltIn(name: string | NimNode): bool =
   for key, _ in builtinElements:
     if key.eqIdent(name): return true
 
-proc text*(val: cstring): Element =
-  Element(document.createTextNode(val))
 
-proc text*(val: Accessor[string]): Element {.effectsOf: val.}=
+proc text*(val: cstring): Node =
+  document.createTextNode(val)
+
+proc text*(val: string): Node =
+  text(val.cstring)
+
+proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
   let elem = text(val())
   createEffect do ():
     elem.innerText = cstring(val())
@@ -114,7 +119,7 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
   ## Top level insert that every widget gets called with.
   ## This handle reinserting the wiWindowWidgetdget if it gets updated.
   ## Always returns a GtkWidget. For lists this returns the item at the end
-  var current = when T is seq: seq[Element](current) else: Element(current)
+  var current = when T is seq: current else: current
   createEffect do ():
     when T is seq:
       current = box.insert(value(), current, if prev != nil: prev() else: nil)
@@ -158,10 +163,6 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
 
 proc wrapMemo(x: NimNode, returnType = ident"auto"): NimNode =
   newCall("createMemo", if x.kind in {nnkProcDef, nnkSym}: x else: accessorProc(x, returnType))
-
-proc elemMemo(x: NimNode): NimNode =
-  wrapMemo(x, ident"Element")
-
 
 proc tryElideMemo(x: NimNode): NimNode =
   ## Checks if the body reads a signal. If it doesn't
@@ -445,7 +446,6 @@ proc processComp(x: NimNode): NimNode =
   # Also store the nodes that we need to process after
   var
     children: seq[NimNode] # Child nodes to create after
-    events: seq[tuple[name: string, handler: NimNode]]
     hasComplexStmt = false # Track any case, for, if, etc
   if x[^1].kind == nnkStmtList:
     for child in x[^1]:
@@ -501,88 +501,5 @@ macro gui*(body: untyped): Element =
   result = processNode(body[0])
   when defined(debugGui):
     echo result.toStrLit
-
-
-when isMainModule:
-  import std/[jsfetch, strformat, json, options]
-  const key {.strdefine: "omdbKey".}: string = ""
-
-  type
-    Show = object
-      Title: string
-      Poster: string
-      Plot: string
-
-  proc search(text: cstring): Future[Option[Show]] {.async.} =
-    let res = fetch(cstring fmt"https://omdbapi.com?apikey={key}&t={text}").await().text()
-    let json = res.await().`$`.parseJson()
-    if json["Response"].getStr() == "True":
-      return some json.to(Show)
-    else:
-      # This gets around a compiler bug with it not properly setting the result.
-      # So the code would be unsound since it would be returning null instead of none(Show)
-      return none(Show)
-
-  proc debounce(time: int, body: proc): proc () =
-      ## Returns a proc that will get debounced if called multiple times
-      var timeout: TimeOut
-      let performTimout = proc () =
-        clearTimeout(timeout)
-        timeout = setTimeout(cast[proc()](body), time)
-      performTimout
-
-  type
-    AsyncState = enum
-      Nothing
-      Loading
-      Loaded
-    AsyncSignal[T] = object
-      case state: AsyncState
-      of Nothing, Loading: discard
-      of Loaded:
-        data: T
-  import std/jsconsole
-  proc createFuture[T](): tuple[data: Accessor[AsyncSignal[T]], setter: Setter[Future[T]]] =
-    let (data, setData) = createSignal(AsyncSignal[T](state: Nothing))
-    let (future, setFuture) = createSignal[Future[T]](nil)
-    createEffect() do ():
-      let future = future()
-      console.log(future)
-      if future != nil:
-        setData(AsyncSignal[T](state: Loading))
-        discard future.then(
-          onSuccess = proc (data: T) =
-            setData(AsyncSignal[T](state: Loaded, data: data))
-          ,onReject = proc (reason: Error) =
-            echo "Error ", reason.message
-        )
-    return (data, setFuture)
-
-  proc App(): Element =
-    let
-      (data, setData) = createFuture[Option[Show]]()
-      (searchString, setSearchString) = createSignal("")
-    var input: Element
-
-    let makeRequest = debounce(1000) do ():
-      input.value.search().setData()
-
-    return gui:
-      tdiv(class="test"):
-        input(ref input):
-          proc input() =
-            makeRequest()
-        case data().state
-        of Nothing: discard
-        of Loading:
-          text("Loading...")
-        of Loaded:
-          let show = data().data
-          if show.isSome():
-            text(show.unsafeGet.Title)
-          else:
-            text("Not found")
-
-  discard document.getElementById("root").insert(App)
 
 export domextras

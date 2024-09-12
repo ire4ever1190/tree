@@ -133,12 +133,6 @@ proc run(x: Computation) =
     listener = x
     x.fn()
 
-
-template staticSignal[T](val: T): Accessor[T] =
-  ## Signal that just returns a value
-  proc fakeGet(): T {.nimcall.} = val
-  fakeGet
-
 proc createSignal*[T](init: T): Signal[T] =
   bind hash
   var subscribers = initNativeSet[Computation]()
