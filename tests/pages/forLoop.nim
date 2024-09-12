@@ -44,6 +44,18 @@ when defined(js):
           p(class="after"):
             text "bar"
 
+        tdiv(id="treeLoops"):
+          for i in 1..number():
+            p(class="item-1", style="color: red"):
+              text($i)
+          for i in 1..number():
+            p(class="item-2", style="color: green"):
+              text($i)
+          for i in 1..number():
+            p(class="item-3", style="color: blue"):
+              text($i)
+
+
   discard document.getElementById("root").insert(App)
 
 else:
@@ -81,6 +93,15 @@ else:
 
       test "With elements around: n=" & $n:
         check await hasElements("elementsAround", true, true, n)
+
+      test "Loops all around: n=" & $n:
+        for i in 1..3:
+          var count = 0
+          for element in await d.getElementsByCssSelector("#treeLoops .item-" & $i):
+            count += 1
+            check d.getElementText(element).await() == $count
+          check count == n
+
     # Run the tests
     makeTestBatch(3)
     await d.selectorClick("#btnInc")
@@ -94,3 +115,6 @@ else:
     await d.selectorClick("#btnDec")
     await d.selectorClick("#btnDec")
     makeTestBatch(0)
+    # And handle coming back from nothing
+    await d.selectorClick("#btnInc")
+    makeTestBatch(1)
