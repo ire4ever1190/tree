@@ -1,5 +1,6 @@
-import std/[macros, strformat, dom, macrocache, asyncjs, sequtils]
+import std/[macros, dom, macrocache, sequtils]
 import ./signal, ./domextras
+
 
 type ElementMemo = Accessor[Element]
 
@@ -47,10 +48,14 @@ proc isBuiltIn(name: string | NimNode): bool =
   for key, _ in builtinElements:
     if key.eqIdent(name): return true
 
-proc text*(val: cstring): Element =
-  Element(document.createTextNode(val))
 
-proc text*(val: Accessor[string]): Element {.effectsOf: val.}=
+proc text*(val: cstring): Node =
+  document.createTextNode(val)
+
+proc text*(val: string): Node =
+  text(val.cstring)
+
+proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
   let elem = text(val())
   createEffect do ():
     elem.innerText = cstring(val())
@@ -158,10 +163,6 @@ proc accessorProc(body: NimNode, returnType = ident"auto"): NimNode =
 
 proc wrapMemo(x: NimNode, returnType = ident"auto"): NimNode =
   newCall("createMemo", if x.kind in {nnkProcDef, nnkSym}: x else: accessorProc(x, returnType))
-
-proc elemMemo(x: NimNode): NimNode =
-  wrapMemo(x, ident"Element")
-
 
 proc tryElideMemo(x: NimNode): NimNode =
   ## Checks if the body reads a signal. If it doesn't
@@ -445,7 +446,6 @@ proc processComp(x: NimNode): NimNode =
   # Also store the nodes that we need to process after
   var
     children: seq[NimNode] # Child nodes to create after
-    events: seq[tuple[name: string, handler: NimNode]]
     hasComplexStmt = false # Track any case, for, if, etc
   if x[^1].kind == nnkStmtList:
     for child in x[^1]:
