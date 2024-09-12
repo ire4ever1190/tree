@@ -91,6 +91,7 @@ proc insert*(box, value: Element, prev: Accessor[Element]): Element =
   box.insert(value, Element(nil))
 
 proc remove*(child: Node) {.importcpp.}
+
 proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[Element] =
   ## Inserts a list of widgets.
   ## Inserts them after `marker`
@@ -119,10 +120,17 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
       current = box.insert(value(), current, if prev != nil: prev() else: nil)
     else:
       current = box.insert(value(), current)
-
+  # Return an accessor that returns the tip element
+  # Used by for loops to know what element to append to
   return proc (): Element =
     when T is seq:
+      # If we are empty try and return the previous element
       if current.len == 0:
+        # If there isn't a previous, then nil is a valid value.
+        # Means there are no child elements so the next element is
+        # free to just append
+        if prev == nil: return nil
+        # See what the previous element has to say
         return prev()
       current[^1]
     else:
