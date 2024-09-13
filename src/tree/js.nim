@@ -6,18 +6,32 @@ type ElementMemo = Accessor[Element]
 
 const builtinElements = CacheTable"tree.elements"
 
-macro registerElement(name: static[string], kind: typedesc): untyped =
+macro registerElement*(name: static[string], kind: typedesc, elemName: static[string] = ""): untyped =
+  ## Registers an internal element. You should't have to touch this unless you
+  ## are adding a new element (Not a component)
+  runnableExamples:
+    type
+      CustomElement {.importc.} = ref object of BaseElement
+        customAttr: cstring
+
+    registerElement("customElement", CustomElement, "custom-element")
+
+    proc App(): Element =
+      gui:
+        customElement(customAttr="test")
+  #==#
   builtinElements[name] = kind
   # Return a proc which will create it
   let id = ident name
+  let elemNameStr = if elemName != "": elemName else: name
   result = quote do:
     # Saved 2kb by using templates. Seems Nim's codegen
     # doesn't play well with tersers mangler
     template `id`*(): `kind` =
-      `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
+      `kind`(document.createElement(`elemNameStr`))
 
 # Basic elements
-registerElement("tdiv", BaseElement)
+registerElement("tdiv", BaseElement, "div")
 registerElement("span", BaseElement)
 registerElement("button", ButtonElement)
 registerElement("nav", ButtonElement)
@@ -50,6 +64,7 @@ proc isBuiltIn(name: string | NimNode): bool =
 
 
 proc text*(val: cstring): Node =
+  ## Creates a text node
   document.createTextNode(val)
 
 proc text*(val: string): Node =
