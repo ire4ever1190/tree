@@ -128,7 +128,7 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
       discard sibling.after(new)
       sibling = new
       result &= new
-
+import jsconsole
 proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
                                                current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
   ## Top level insert that every widget gets called with.
@@ -154,6 +154,12 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
         return prev()
       current[^1]
     else:
+      if current == nil:
+        if prev == nil:
+          echo "prev is nil"
+          console.log box.firstChild
+          return Element(box.firstChild)
+        return prev()
       current
 
 # ???? Why doesn't it allow the same???
