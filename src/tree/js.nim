@@ -157,8 +157,7 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
       if current == nil:
         if prev == nil:
           echo "prev is nil"
-          console.log box.firstChild
-          return Element(box.firstChild)
+          return box
         return prev()
       current
 
