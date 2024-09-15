@@ -1,9 +1,10 @@
 when defined(js):
   import tree
-  import std/dom
+  import std/[dom, jscore]
 
   proc App(): Element =
     let (number, setNumber) = createSignal(3)
+
     gui:
       tdiv:
         button(id="btnInc"):
@@ -53,6 +54,16 @@ when defined(js):
             p(class="item-3", style="color: blue"):
               text($i)
 
+        # Test that when it rerenders, the loops don't go last
+        # Can happen if prev() is wrong and returns nil when it shouldn't
+        tdiv(id="prevNotLoop"):
+          if false:
+            text "Never shown"
+          for i in number()..number():
+            p:
+              text "Loop"
+          p:
+            text "Not Loop"
 
   App.renderTo("root")
 
@@ -101,6 +112,18 @@ else:
           check count == n
 
     # Run the tests
+    test "Non loops handle prev() calls correctly":
+      # Check initial creation is correct
+      template checkText() =
+        check d.selectorText("#prevNotLoop p:nth-child(1)").await() == "Loop"
+        check d.selectorText("#prevNotLoop p:nth-child(2)").await() == "Not Loop"
+      checkText()
+      # Make sure the loop has been rerendered
+      await d.selectorClick("#btnInc")
+      await d.selectorClick("#btnDec")
+      # Check it handles rerender properly
+      checkText()
+
     makeTestBatch(3)
     await d.selectorClick("#btnInc")
     # Test the loops can properly expand

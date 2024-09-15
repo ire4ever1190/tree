@@ -1,3 +1,7 @@
+##[
+  Basic bindings to built-in JS `Set` type
+]##
+
 type
   JSSet*[T] {.importc.} = ref object
 
@@ -20,9 +24,9 @@ proc next[T](iter: Iterator[T]): IteratorResult[T] {.importjs: "#.next()".}
 proc clear*(s: JSSet) {.importjs: "#.clear()".}
 
 iterator items*[T](s: JSSet[T]): T =
-  var iter = s.entries()
+  let iter = s.entries()
   while true:
-    var res = iter.next()
+    let res = iter.next()
     if res.done:
       break
     yield res.value[0]

@@ -12,6 +12,8 @@ type
   NativeSet[T] = (when defined(js): JSSet[T] else: HashSet[T])
 
 proc initNativeSet[T](): NativeSet[T] =
+  ## Creates a `Set` that works on the current platform.
+  ## Uses Nim's set on native platforms and built-in `Set` on JS
   when defined(js): newJSSet[T]()
   else: initHashSet[T]()
 
@@ -96,7 +98,7 @@ proc initRoot*[T](body: Accessor[T]): T =
 
 
 proc dispose(body: Observer) =
-  ## Cleansup an observer by disposing of all its children and itself
+  ## Cleans up an observer by disposing of all its children and itself
   # First clear the children
   for child in body.children:
     dispose child

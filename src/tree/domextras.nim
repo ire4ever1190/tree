@@ -27,3 +27,4 @@ type
 proc form(btn: ButtonElement): dom.FormElement {.importjs: "#.form".}
 proc name*(event: Event): cstring {.importjs: "#.name".}
 proc `kind=`*(e: InputElement, kind: cstring) {.importjs: "#.type = #".}
+proc prepend*(e: Element, children: Node) {.importjs: "#.prepend(@)"}

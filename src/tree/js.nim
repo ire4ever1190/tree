@@ -6,18 +6,32 @@ type ElementMemo = Accessor[Element]
 
 const builtinElements = CacheTable"tree.elements"
 
-macro registerElement(name: static[string], kind: typedesc): untyped =
+macro registerElement*(name: static[string], kind: typedesc, elemName: static[string] = ""): untyped =
+  ## Registers an internal element. You should't have to touch this unless you
+  ## are adding a new element (Not a component)
+  runnableExamples:
+    type
+      CustomElement {.importc.} = ref object of BaseElement
+        customAttr: cstring
+
+    registerElement("customElement", CustomElement, "custom-element")
+
+    proc App(): Element =
+      gui:
+        customElement(customAttr="test")
+  #==#
   builtinElements[name] = kind
   # Return a proc which will create it
   let id = ident name
+  let elemNameStr = if elemName != "": elemName else: name
   result = quote do:
     # Saved 2kb by using templates. Seems Nim's codegen
     # doesn't play well with tersers mangler
     template `id`*(): `kind` =
-      `kind`(document.createElement(when `name` == "tdiv": "div" else: `name`))
+      `kind`(document.createElement(`elemNameStr`))
 
 # Basic elements
-registerElement("tdiv", BaseElement)
+registerElement("tdiv", BaseElement, "div")
 registerElement("span", BaseElement)
 registerElement("button", ButtonElement)
 registerElement("nav", ButtonElement)
@@ -50,6 +64,7 @@ proc isBuiltIn(name: string | NimNode): bool =
 
 
 proc text*(val: cstring): Node =
+  ## Creates a text node
   document.createTextNode(val)
 
 proc text*(val: string): Node =
@@ -101,11 +116,16 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
   ## Inserts a list of widgets.
   ## Inserts them after `marker`
   # TODO: Add reconcilation via keys
+  # TODO: Use append/prepend with multiple items
   for old in current:
     old.remove()
   if marker == nil:
     for new in value:
       box.appendChild(new)
+      result &= new
+  elif marker == box: # parent is sentinal for prepending the element
+    for new in value:
+      box.prepend(new)
       result &= new
   else:
     var sibling = marker
@@ -128,15 +148,14 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
   # Return an accessor that returns the tip element
   # Used by for loops to know what element to append to
   return proc (): Element =
+    # If the current element doesn't exist then we need to
+    # return what came before
+    if (when T is seq: current.len == 0 else: current == nil):
+      #
+      if prev == nil:
+        return box
+      return prev()
     when T is seq:
-      # If we are empty try and return the previous element
-      if current.len == 0:
-        # If there isn't a previous, then nil is a valid value.
-        # Means there are no child elements so the next element is
-        # free to just append
-        if prev == nil: return nil
-        # See what the previous element has to say
-        return prev()
       current[^1]
     else:
       current
@@ -507,3 +526,4 @@ proc renderTo*(component: proc (): Element, id: string) =
   discard document.getElementById(id).insert(component)
 
 export domextras
+export dom
