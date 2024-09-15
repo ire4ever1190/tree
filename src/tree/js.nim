@@ -116,11 +116,16 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
   ## Inserts a list of widgets.
   ## Inserts them after `marker`
   # TODO: Add reconcilation via keys
+  # TODO: Use append/prepend with multiple items
   for old in current:
     old.remove()
   if marker == nil:
     for new in value:
       box.appendChild(new)
+      result &= new
+  elif marker == box: # parent is sentinal for prepending the element
+    for new in value:
+      box.prepend(new)
       result &= new
   else:
     var sibling = marker
@@ -128,7 +133,7 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
       discard sibling.after(new)
       sibling = new
       result &= new
-import jsconsole
+
 proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
                                                current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
   ## Top level insert that every widget gets called with.
@@ -143,22 +148,16 @@ proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
   # Return an accessor that returns the tip element
   # Used by for loops to know what element to append to
   return proc (): Element =
+    # If the current element doesn't exist then we need to
+    # return what came before
+    if (when T is seq: current.len == 0 else: current == nil):
+      #
+      if prev == nil:
+        return box
+      return prev()
     when T is seq:
-      # If we are empty try and return the previous element
-      if current.len == 0:
-        # If there isn't a previous, then nil is a valid value.
-        # Means there are no child elements so the next element is
-        # free to just append
-        if prev == nil: return nil
-        # See what the previous element has to say
-        return prev()
       current[^1]
     else:
-      if current == nil:
-        if prev == nil:
-          echo "prev is nil"
-          return box
-        return prev()
       current
 
 # ???? Why doesn't it allow the same???
