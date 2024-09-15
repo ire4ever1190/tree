@@ -526,3 +526,4 @@ proc renderTo*(component: proc (): Element, id: string) =
   discard document.getElementById(id).insert(component)
 
 export domextras
+export dom
