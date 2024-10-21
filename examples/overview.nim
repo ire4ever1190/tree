@@ -55,13 +55,12 @@ example:
         button():
           proc click() =
             setList(list() & Todo(title: $inputElem.value))
-          text("Add TODO")
+          "Add TODO"
 
   proc Example(): Element =
     gui:
       fieldset:
-        legend:
-          text("TODO list")
+        legend: "TODO list"
         ItemAdder()
         ul:
           for idx, item in list():

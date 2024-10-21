@@ -70,11 +70,49 @@ proc text*(val: cstring): Node =
 proc text*(val: string): Node =
   text(val.cstring)
 
-proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
+proc text*(val: Accessor[string]): Accessor[Node] {.effectsOf: val.} =
+  ## Helper that takes in a string created from a signal
   let elem = text(val())
   createEffect do ():
     elem.innerText = cstring(val())
-  elem
+  # Remove this in future for optimisation.
+  # Issue is case statements with just string branches get optimised
+  # into a single node which causes problems with the case expression
+  # expecting a memo to be returned
+  proc (): Node = elem
+
+
+# To support any expression being in the tree we have these
+# coerce calls to check if value can become an element and then
+# perform implicit conversion
+template coerceIntoElement(val: Node): Element =
+  ## For explicit conversion of Node into Element
+  when val is Element: val else: Element(val)
+
+template coerceIntoElement(val: Accessor[Node]): Accessor[Element] =
+  cast[Accessor[Element]](val)
+
+template coerceIntoElement[T: Element | seq[Element]](val: Accessor[T]): Accessor[T] =
+  val
+
+template coerceIntoElement*(val: string | Accessor[string]): untyped =
+  ## Template for implicit conversion of string into Element
+  coerceIntoElement(text(val))
+
+template coerceIntoElement[T: void](val: T) =
+  ## Doesn't convert into an Element, but allows support for
+  ## statements within the GUI.
+  ## e.g. echo "test", let x = 8
+
+template checkExpr*(val: typed): untyped {.callsite.} =
+  ## Checks that the expression given can be converted into an element.
+  ## This is to provide better messages than a bunch of overloads
+  bind coerceIntoElement
+  when not compiles(coerceIntoElement(val)):
+    {.error: $type(val) & " can't be converted into an element".}
+  else:
+    coerceIntoElement(val)
+
 
 proc add(elem: Element, child: Element) =
   if child != nil:
@@ -135,7 +173,7 @@ proc insert*(box: Element, value, current: seq[Element], marker: Element): seq[E
       result &= new
 
 proc insert*[T: Element | seq[Element]](box: Element, value: Accessor[T],
-                                               current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
+                                        current: T = default(T), prev: Accessor[Element] = nil): Accessor[Element] =
   ## Top level insert that every widget gets called with.
   ## This handle reinserting the wiWindowWidgetdget if it gets updated.
   ## Always returns a GtkWidget. For lists this returns the item at the end
@@ -335,12 +373,10 @@ proc processNode(x: NimNode): NimNode =
     #  result &= node.processNode()
     #result
     x.processStmts()
-  of nnkLetSection:
-    x
   of nnkTryStmt:
     x.processTryExcept()
   else:
-    ("Unexpected statement: " & $x.kind).error(x)
+    x
 
 proc processStmts(x: NimNode): NimNode =
   result = newStmtList()
@@ -466,6 +502,7 @@ proc processComp(x: NimNode): NimNode =
   var
     children: seq[NimNode] # Child nodes to create after
     hasComplexStmt = false # Track any case, for, if, etc
+
   if x[^1].kind == nnkStmtList:
     for child in x[^1]:
       case child.kind
@@ -475,15 +512,12 @@ proc processComp(x: NimNode): NimNode =
         compGen &= newCall(ident"registerEvent", widget, newCall("cstring", signalName), child.name)
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
-      of nnkIfStmt, nnkForStmt, nnkCall, nnkCommand, nnkCaseStmt, nnkTryStmt: # Other supported nodes
+      else: # Anything else will get processed and added later
         # TODO: Check if I pass lastWidget for if and case statements.
         # Since if they return nil, what do we replace with when not null???
         if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt, nnkTryStmt}:
           hasComplexStmt = true
         children &= child
-      else:
-        # ???? Shouldn't I error here?
-        discard processNode(child)
 
   # Process any children that need to get added
   if children.len > 0:
@@ -494,11 +528,16 @@ proc processComp(x: NimNode): NimNode =
     compGen.add quote do:
       var `lastWidget`: ElementMemo = nil
     for child in children:
+      # TODO: Why don't I optimise complex statements?
       let body = if not hasComplexStmt:
           child.processNode().tryElideMemo()
         else:
           child.processNode().wrapMemo()
-      let insertCall = newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget))
+      # Make sure the child element can actually be an element.
+      # This allows us to give better error messages
+      let checkCall = newCall("checkExpr", body)
+      checkCall.copyLineInfo(body)
+      let insertCall = newCall(ident"insert", widget, checkCall, nnkExprEqExpr.newTree(ident"prev", lastWidget))
       if hasComplexStmt:
         compGen &= nnkAsgn.newTree(lastWidget, insertCall)
       else:
@@ -511,14 +550,16 @@ proc processComp(x: NimNode): NimNode =
   # Sometimes the body is just a call. Optimise this into just the call.
   # Noticed that the block statement added some weirdness in the codegen
   if compGen.len == 2:
-    result = "Element".ident().newCall(compGen[0][0][2])
+    result = compGen[0][0][2]
   else:
-    result = "Element".ident().newCall(nnkBlockStmt.newTree(newEmptyNode(), compGen))
+    result = nnkBlockStmt.newTree(newEmptyNode(), compGen)
+  # Coerce the return into an element
+  result = newCall("checkExpr", result)
 
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
-  when defined(debugGui):
+  when defined(debugTreeGui):
     echo result.toStrLit
 
 proc renderTo*(component: proc (): Element, id: string) =
