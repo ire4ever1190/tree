@@ -108,7 +108,6 @@ template checkExpr*(val: typed): untyped {.callsite.} =
   ## Checks that the expression given can be converted into an element.
   ## This is to provide better messages than a bunch of overloads
   bind coerceIntoElement
-  discard coerceIntoElement(val)
   when not compiles(coerceIntoElement(val)):
     {.error: $type(val) & " can't be converted into an element".}
   else:
