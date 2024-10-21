@@ -35,8 +35,7 @@ example:
     # Build the GUI
     gui:
       tdiv:
-        p:
-          text(proc (): string = "The count is " & $count())
+        p: "The count is " & $count()
         tdiv:
           try:
             Counter(count)
@@ -46,4 +45,4 @@ example:
                 text(e.msg)
               button:
                 proc click() = setCount(defaultCount)
-                text("Click me to fix it")
+                "Click me to fix it"
