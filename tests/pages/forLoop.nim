@@ -25,7 +25,7 @@ when defined(js):
             text "foo"
           for i in 1..number():
             p(class="item"):
-              text($i)
+              $i
 
         tdiv(id="elementAfter"):
           for i in 1..number():
