@@ -76,6 +76,23 @@ proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
     elem.innerText = cstring(val())
   elem
 
+template coerceIntoElement*(val: Node): Element =
+  ## For explicit conversion of Node into Element
+  Element(val)
+
+template coerceIntoElement*(val: string): Element =
+  ## Template for explicit conversion of string into Element
+  coerceIntoElement(text(val))
+
+template coerceIntoElement*[T: void](val: T) =
+  ## Doesn't convert into an Element, but allows support for
+  ## statements within the GUI.
+  ## e.g. echo "test", let x = 8
+
+#template coerceIntoElement*(val: untyped) {.callsite.} =
+#  {.error: "Value can't be converted into an element".}
+
+
 proc add(elem: Element, child: Element) =
   if child != nil:
     elem.appendChild(child)
@@ -335,12 +352,16 @@ proc processNode(x: NimNode): NimNode =
     #  result &= node.processNode()
     #result
     x.processStmts()
-  of nnkLetSection:
-    x
   of nnkTryStmt:
     x.processTryExcept()
+  of RoutineNodes:
+    x
   else:
-    ("Unexpected statement: " & $x.kind).error(x)
+    # Any other node will get coerced into an element
+    # Later it will get added to the tree (If its an expression)
+    let res = newCall("coerceIntoElement", x)
+    res.copyLineInfo(x)
+    res
 
 proc processStmts(x: NimNode): NimNode =
   result = newStmtList()
@@ -466,6 +487,7 @@ proc processComp(x: NimNode): NimNode =
   var
     children: seq[NimNode] # Child nodes to create after
     hasComplexStmt = false # Track any case, for, if, etc
+
   if x[^1].kind == nnkStmtList:
     for child in x[^1]:
       case child.kind
@@ -475,7 +497,7 @@ proc processComp(x: NimNode): NimNode =
         compGen &= newCall(ident"registerEvent", widget, newCall("cstring", signalName), child.name)
       of nnkAsgn: # Extra property
         compGen &= generateAsgn(widget, child[0], child[1])
-      of nnkIfStmt, nnkForStmt, nnkCall, nnkCommand, nnkCaseStmt, nnkTryStmt: # Other supported nodes
+      of nnkIfStmt, nnkForStmt, nnkCall, nnkCommand, nnkCaseStmt, nnkTryStmt, nnkStrLit: # Other supported nodes
         # TODO: Check if I pass lastWidget for if and case statements.
         # Since if they return nil, what do we replace with when not null???
         if child.kind in {nnkIfStmt, nnkForStmt, nnkCaseStmt, nnkTryStmt}:
@@ -494,6 +516,7 @@ proc processComp(x: NimNode): NimNode =
     compGen.add quote do:
       var `lastWidget`: ElementMemo = nil
     for child in children:
+      # TODO: Why don't I optimise complex statements?
       let body = if not hasComplexStmt:
           child.processNode().tryElideMemo()
         else:
@@ -511,14 +534,16 @@ proc processComp(x: NimNode): NimNode =
   # Sometimes the body is just a call. Optimise this into just the call.
   # Noticed that the block statement added some weirdness in the codegen
   if compGen.len == 2:
-    result = "Element".ident().newCall(compGen[0][0][2])
+    result = compGen[0][0][2]
   else:
-    result = "Element".ident().newCall(nnkBlockStmt.newTree(newEmptyNode(), compGen))
+    result = nnkBlockStmt.newTree(newEmptyNode(), compGen)
+  # Coerce the return into an element
+  result = newCall("coerceIntoElement", result)
 
 macro gui*(body: untyped): Element =
   ## TODO: Error if there are multiple elements
   result = processNode(body[0])
-  when defined(debugGui):
+  when defined(debugTreeGui):
     echo result.toStrLit
 
 proc renderTo*(component: proc (): Element, id: string) =
