@@ -5,6 +5,7 @@ when defined(js):
   proc myName(): string = "Jake"
 
   proc App(): Element =
+    let (count, setCount) = createSignal(0)
     gui:
       tdiv:
         p(id="commandCall"):
@@ -21,6 +22,10 @@ when defined(js):
         # works so a function call should get interpreted the same
         p(id="stringChildFromCall"):
           myName()
+        # This should automatically get tracked and updated correctly
+        button(id="complexString"):
+          proc click() = setCount(2)
+          "Count is: " & $count()
 
   App.renderTo("root")
 
@@ -39,3 +44,8 @@ else:
 
     test "String Child Call":
       check d.selectorText("#stringChildFromCall").await() == "Jake"
+
+    test "String with signals":
+      check d.selectorText("#complexString").await() == "Count is: 0"
+      await d.selectorClick("#complexString")
+      check d.selectorText("#complexString").await() == "Count is: 2"
