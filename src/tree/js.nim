@@ -70,11 +70,16 @@ proc text*(val: cstring): Node =
 proc text*(val: string): Node =
   text(val.cstring)
 
-proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
+proc text*(val: Accessor[string]): Accessor[Node] {.effectsOf: val.} =
+  ## Helper that takes in a string created from a signal
   let elem = text(val())
   createEffect do ():
     elem.innerText = cstring(val())
-  elem
+  # Remove this in future for optimisation.
+  # Issue is case statements with just string branches get optimised
+  # into a single node which causes problems with the case expression
+  # expecting a memo to be returned
+  proc (): Node = elem
 
 
 # To support any expression being in the tree we have these
@@ -82,28 +87,28 @@ proc text*(val: Accessor[string]): Node {.effectsOf: val.}=
 # perform implicit conversion
 template coerceIntoElement(val: Node): Element =
   ## For explicit conversion of Node into Element
-  # TODO: Clean this
-  {.push hint[ConvFromXtoItselfNotNeeded]: off.}
-  let x = Element(val)
-  {.pop.}
-  x
+  when val is Element: val else: Element(val)
 
-template coerceIntoElement(val: string | Accessor[string]): Element =
+template coerceIntoElement(val: Accessor[Node]): Accessor[Element] =
+  cast[Accessor[Element]](val)
+
+template coerceIntoElement[T: Element | seq[Element]](val: Accessor[T]): Accessor[T] =
+  val
+
+template coerceIntoElement*(val: string | Accessor[string]): untyped =
   ## Template for implicit conversion of string into Element
-  Element(text(val))
+  coerceIntoElement(text(val))
 
 template coerceIntoElement[T: void](val: T) =
   ## Doesn't convert into an Element, but allows support for
   ## statements within the GUI.
   ## e.g. echo "test", let x = 8
 
-template coerceIntoElement[T: Element | seq[Element]](val: Accessor[T]): Accessor[T] =
-  val
-
 template checkExpr*(val: typed): untyped {.callsite.} =
   ## Checks that the expression given can be converted into an element.
   ## This is to provide better messages than a bunch of overloads
   bind coerceIntoElement
+  discard coerceIntoElement(val)
   when not compiles(coerceIntoElement(val)):
     {.error: $type(val) & " can't be converted into an element".}
   else:

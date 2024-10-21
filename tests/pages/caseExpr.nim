@@ -18,12 +18,9 @@ when defined(js):
             setColour(succ colour())
         p(id="colour"):
           case colour()
-          of Red:
-            text "Red"
-          of Green:
-            text "Green"
-          of Blue:
-            text "Blue"
+          of Red: "Red"
+          of Green: "Green"
+          of Blue: "Blue"
 
         # Make sure that an else branch is handled
         case colour()
