@@ -18,7 +18,7 @@ when defined(js):
             text("Its true")
         else:
           p(id="whenFalse"):
-            text("Its false")
+            "Its false"
 
   App.renderTo("root")
 
