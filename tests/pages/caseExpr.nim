@@ -11,6 +11,10 @@ when defined(js):
 
   proc App(): Element =
     let (colour, setColour) = createSignal(Red)
+    let (counter, setCounter) = createSignal(0)
+    proc setAndRet(): int =
+      setCounter(3)
+      counter()
     gui:
       tdiv:
         button(id="btnInc"):
@@ -29,6 +33,17 @@ when defined(js):
             text "It's not green"
         else:
           discard
+        p(id="discardStmts"):
+          case colour()
+          of Green:
+            # Make sure discard statements are called
+            discard setAndRet()
+          of Blue:
+            # Small logic error I had where I discarded the result if
+            # the first element was a discard statement
+            discard 9
+            $counter()
+          else: discard
 
   App.renderTo("root")
 
@@ -48,3 +63,13 @@ else:
         # Check the main case expression is correct
         check d.selectorText("#colour").await() == symbolName(c)
         await d.selectorClick("#btnInc")
+
+    test "Discard statements":
+      for c in Colour:
+        let text = d.selectorText("#discardStmts").await()
+        let expected = case c
+                       of Green, Red: ""
+                       of Blue: "3"
+        checkpoint $c & ": " & text & " " & expected
+        check text == expected
+
