@@ -10,7 +10,7 @@ when defined(js):
           proc click = setFlag(not flag())
         # Test elements can be conditional
         if flag():
-          p(id="toggled"):
+          p(id="toggled"):Red
             text "I'm shown"
         # Test that elements get cleaned
         if flag():
@@ -19,6 +19,10 @@ when defined(js):
         else:
           p(id="whenFalse"):
             "Its false"
+        # Test that they act like a block
+        if true:
+          p(id="block1"): "This is shown"
+          p(id="block2"): "This too"
 
   App.renderTo("root")
 
@@ -40,3 +44,7 @@ else:
     # Check they can handle cleaning up after
     await d.selectorClick("#btnFlip")
     testForState(false)
+
+    test "Block is shown":
+      check d.selectorText("#block1").await() == "This is shown"
+      check d.selectorText("#block2").await() == "This too"

@@ -31,19 +31,20 @@ when defined(js):
         of Green:
           p(id="onlyGreen"):
             text "It's not green"
-        else:
-          discard
+        else: nil
+
         p(id="discardStmts"):
           case colour()
           of Green:
             # Make sure discard statements are called
             discard setAndRet()
+            "test"
           of Blue:
             # Small logic error I had where I discarded the result if
             # the first element was a discard statement
             discard 9
             $counter()
-          else: discard
+          else: nil
 
   App.renderTo("root")
 
@@ -68,7 +69,8 @@ else:
       for c in Colour:
         let text = d.selectorText("#discardStmts").await()
         let expected = case c
-                       of Green, Red: ""
+                       of Green: "test"
+                       of Red: ""
                        of Blue: "3"
         checkpoint $c & ": " & text & " " & expected
         check text == expected
