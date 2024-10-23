@@ -350,7 +350,7 @@ afterwards (Maybe some handler raises an exception)
 ]#
 
 proc processComp(x: NimNode): NimNode
-proc processIf(x: NimNode): NimNode
+proc processCondtional(x: NimNode): NimNode
 proc processLoop(x: NimNode): NimNode
 proc processCase(x: NimNode): NimNode
 proc processStmts(x: NimNode): NimNode
@@ -358,8 +358,8 @@ proc processTryExcept(x: NimNode): NimNode
 
 proc processNode(x: NimNode): NimNode =
   case x.kind
-  of nnkIfStmt:
-    x.processIf()
+  of nnkIfStmt, nnkWhenStmt:
+    x.processCondtional()
   of nnkCall, nnkCommand:
     x.processComp()
   of nnkForStmt, nnkWhileStmt:
@@ -376,23 +376,27 @@ proc processNode(x: NimNode): NimNode =
   of nnkTryStmt:
     x.processTryExcept()
   else:
-    x
+    # Everything else is an expression, so we must
+    # check its an Element
+    newCall("checkExpr", x)
 
 proc processStmts(x: NimNode): NimNode =
   result = newStmtList()
   for node in x:
     result &= node.processNode()
 
-proc processIf(x: NimNode): NimNode =
-  let ifStmt = nnkIfStmt.newTree()
+proc processCondtional(x: NimNode): NimNode =
+  ## Handles `if` and `when` expressions
+  assert x.kind in {nnkIfStmt, nnkWhenStmt}
+  result = x.kind.newTree()
   for branch in x:
     let rootCall = branch[^1][0].processNode()
     branch[^1] = rootCall
-    ifStmt &= branch
-  # Make sure its an expression
-  if ifStmt[^1].kind != nnkElse:
-    ifStmt &= nnkElse.newTree(nilElement())
-  result = ifStmt
+    result &= branch
+  # Must always be an expression so we must
+  # add an else branch if it doesnt exist
+  if result[^1].kind != nnkElse:
+    result &= nnkElse.newTree(nilElement())
 
 proc tryAdd*(items: var seq[Element], widget: Element) =
   ## Only adds a widget if it isn't nil
@@ -533,11 +537,7 @@ proc processComp(x: NimNode): NimNode =
           child.processNode().tryElideMemo()
         else:
           child.processNode().wrapMemo()
-      # Make sure the child element can actually be an element.
-      # This allows us to give better error messages
-      let checkCall = newCall("checkExpr", body)
-      checkCall.copyLineInfo(body)
-      let insertCall = newCall(ident"insert", widget, checkCall, nnkExprEqExpr.newTree(ident"prev", lastWidget))
+      let insertCall = newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget))
       if hasComplexStmt:
         compGen &= nnkAsgn.newTree(lastWidget, insertCall)
       else:

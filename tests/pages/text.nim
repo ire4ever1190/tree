@@ -2,7 +2,13 @@ when defined(js):
   import tree
   import std/dom
 
-  proc myName(): string = "Jake"
+  proc myName(): string =
+    "Jake"
+
+  proc stringElem(): Element =
+    gui:
+      # Test that expressions are always converted into elements
+      "hello"
 
   proc App(): Element =
     let (count, setCount) = createSignal(0)
@@ -14,6 +20,8 @@ when defined(js):
           text("World")
         p(id="stringChild"):
           "Foo Bar"
+        p(id="stringElem"):
+          stringElem()
         # Calls should also be supported since
         # ```
         # gui:
@@ -44,6 +52,9 @@ else:
 
     test "String Child Call":
       check d.selectorText("#stringChildFromCall").await() == "Jake"
+
+    test "Raw string elem":
+      check d.selectorText("#stringElem").await() == "hello"
 
     test "String with signals":
       check d.selectorText("#complexString").await() == "Count is: 0"
