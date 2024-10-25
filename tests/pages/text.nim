@@ -38,7 +38,7 @@ when defined(js):
   App.renderTo("root")
 
 else:
-  import utils
+  import utils, std/strutils
 
   proc tests*(d: FirefoxDriver) {.async.} =
     test "Command Call":

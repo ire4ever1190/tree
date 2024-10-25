@@ -10,7 +10,7 @@ when defined(js):
           proc click = setFlag(not flag())
         # Test elements can be conditional
         if flag():
-          p(id="toggled"):Red
+          p(id="toggled"):
             text "I'm shown"
         # Test that elements get cleaned
         if flag():
@@ -27,7 +27,7 @@ when defined(js):
   App.renderTo("root")
 
 else:
-  import utils
+  import utils, std/strutils
 
   proc tests*(d: FirefoxDriver) {.async.} =
     template testForState(state: bool) =
@@ -48,3 +48,7 @@ else:
     test "Block is shown":
       check d.selectorText("#block1").await() == "This is shown"
       check d.selectorText("#block2").await() == "This too"
+
+    # Bug where nil elements were rendered as null instead of not getting shown
+    test "No Null":
+      check "null" notin d.selectorText("div").await()

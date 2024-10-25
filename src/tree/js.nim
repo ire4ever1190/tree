@@ -85,7 +85,7 @@ proc text*(val: Accessor[string]): Accessor[Node] {.effectsOf: val.} =
 # To support any expression being in the tree we have these
 # coerce calls to check if value can become an element and then
 # perform implicit conversion
-template coerceIntoElement(val: Node): Element =
+template coerceIntoElement(val: Node): Element {.callsite.} =
   ## For explicit conversion of Node into Element
   when val is Element: val else: Element(val)
 
@@ -103,6 +103,8 @@ template coerceIntoElement[T: void](val: T) =
   ## Doesn't convert into an Element, but allows support for
   ## statements within the GUI.
   ## e.g. echo "test", let x = 8
+
+template coerceIntoElement(val: typeof(nil)): Element = Element(nil)
 
 template checkExpr*(val: typed): untyped {.callsite.} =
   ## Checks that the expression given can be converted into an element.
@@ -441,15 +443,10 @@ proc processCase(x: NimNode): NimNode =
   x.expectKind(nnkCaseStmt)
   result = nnkCaseStmt.newTree(x[0])
   for branch in x[1..^1]: # Ignore first item
-    let expr = branch[^1]
-    if expr.kind == nnkStmtList and expr[0].kind == nnkDiscardStmt:
-      # Discard could have side effects, so still call it but make it
-      # into an expression that returns nil
-      branch[^1] = newStmtList(expr[0], nilElement())
-    else:
-      let rootCall = branch[^1].processNode()
-      branch[^1] = rootCall
+    branch[^1] = branch[^1].processNode()
     result &= branch
+  # We don't add an else branch since that would break safety
+  # of checking all cases
 
 proc processTryExcept(x: NimNode): NimNode =
   x.expectKind(nnkTryStmt)
@@ -494,6 +491,7 @@ proc processComp(x: NimNode): NimNode =
   let
     widget = ident("widget")
     compGen = newStmtList(newLetStmt(widget, init))
+  widget.copyLineInfo(x)
   # Native elements need each property to be assigned
   # Non native elements need the props passed to the call
   if native:
@@ -532,11 +530,11 @@ proc processComp(x: NimNode): NimNode =
     compGen.add quote do:
       var `lastWidget`: ElementMemo = nil
     for child in children:
-      # TODO: Why don't I optimise complex statements?
-      let body = if not hasComplexStmt:
-          child.processNode().tryElideMemo()
-        else:
-          child.processNode().wrapMemo()
+      let
+        processed = child.processNode()
+        # TODO: Why don't I optimise complex statements?
+        body = if not hasComplexStmt: processed.tryElideMemo()
+               else: processed.wrapMemo()
       let insertCall = newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget))
       if hasComplexStmt:
         compGen &= nnkAsgn.newTree(lastWidget, insertCall)
