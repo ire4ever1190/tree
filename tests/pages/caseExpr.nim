@@ -13,13 +13,16 @@ when defined(js):
     let (colour, setColour) = createSignal(Red)
     let (counter, setCounter) = createSignal(0)
     proc setAndRet(): int =
+      echo "called"
       setCounter(3)
       counter()
     gui:
       tdiv:
         button(id="btnInc"):
           proc click =
-            setColour(succ colour())
+            # TODO: Investigate JS codegen bug.
+            # This didn't cause an e
+            setColour(if colour() == Blue: Red else: succ colour())
         p(id="colour"):
           case colour()
           of Red: "Red"
@@ -31,7 +34,7 @@ when defined(js):
         of Green:
           p(id="onlyGreen"):
             text "It's not green"
-        else: nil
+        else: discard
 
         p(id="discardStmts"):
           case colour()
@@ -44,7 +47,7 @@ when defined(js):
             # the first element was a discard statement
             discard 9
             $counter()
-          else: nil
+          else: discard
 
   App.renderTo("root")
 
@@ -72,6 +75,6 @@ else:
                        of Green: "test"
                        of Red: ""
                        of Blue: "3"
-        checkpoint $c & ": " & text & " " & expected
+        checkpoint $c & ": '" & text & "' " & expected
         check text == expected
-
+        await d.selectorClick("#btnInc")

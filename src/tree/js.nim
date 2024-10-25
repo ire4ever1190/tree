@@ -103,6 +103,8 @@ template coerceIntoElement[T: void](val: T) =
   ## Doesn't convert into an Element, but allows support for
   ## statements within the GUI.
   ## e.g. echo "test", let x = 8
+  # Call the statement in case it might have side effects
+  val
 
 template coerceIntoElement(val: typeof(nil)): Element = Element(nil)
 
@@ -338,6 +340,8 @@ except:
 into
 ```
 let item = block:
+  # Needs to be a signal since the except clause could be called
+  # after the first render
   let (curr, setCurr) = createSignal[Element](nil)
   try:
     setCurr:
@@ -387,18 +391,52 @@ proc processStmts(x: NimNode): NimNode =
   for node in x:
     result &= node.processNode()
 
+proc deepCopyLineInfo(target, info: NimNode) =
+  ## Copies line info from `info` into `target` and all children of `target`.
+  ## Not really needed for normal code, but makes life easier when tracking down
+  ## DSL issues
+  target.copyLineInfo(info)
+  for child in target:
+    child.deepCopyLineInfo(info)
+
+proc createElementList(x: NimNode): NimNode =
+  ## Converts a list of expressions/statements into
+  ## a lsit of elements. This is used for blocks of code
+  ## that need to be conditionally rendered since then we can
+  ## easily teardown a list of elements
+  let res = genSym(nskVar, "elements")
+  x.expectKind(nnkStmtList)
+  result = newStmtList()
+  result &= newVarStmt(res, quote do: newSeq[Element]())
+  for elem in x:
+    let processed = elem.processNode()
+    let addStmt = quote do:
+      # We only want to append non void elements.
+      # `isnot void` doesn't work for discard statements
+      when compiles(`res` &= `processed`):
+        `res` &= `processed`
+      else:
+        `processed`
+    addStmt.deepCopyLineInfo(x)
+    result &= addStmt
+  # Turn the whole thing into an expression that returns the list
+  result &= res
+
+
+
 proc processCondtional(x: NimNode): NimNode =
   ## Handles `if` and `when` expressions
+  # TODO: Have when be optimised as a statement
   assert x.kind in {nnkIfStmt, nnkWhenStmt}
   result = x.kind.newTree()
   for branch in x:
-    let rootCall = branch[^1][0].processNode()
+    let rootCall = branch[^1].createElementList()
     branch[^1] = rootCall
     result &= branch
   # Must always be an expression so we must
   # add an else branch if it doesnt exist
   if result[^1].kind != nnkElse:
-    result &= nnkElse.newTree(nilElement())
+    result &= nnkElse.newTree(quote do: newSeq[Element]())
 
 proc tryAdd*(items: var seq[Element], widget: Element) =
   ## Only adds a widget if it isn't nil
@@ -443,7 +481,7 @@ proc processCase(x: NimNode): NimNode =
   x.expectKind(nnkCaseStmt)
   result = nnkCaseStmt.newTree(x[0])
   for branch in x[1..^1]: # Ignore first item
-    branch[^1] = branch[^1].processNode()
+    branch[^1] = branch[^1].createElementList()
     result &= branch
   # We don't add an else branch since that would break safety
   # of checking all cases
