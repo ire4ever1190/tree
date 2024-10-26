@@ -438,11 +438,6 @@ proc processCondtional(x: NimNode): NimNode =
   if result[^1].kind != nnkElse:
     result &= nnkElse.newTree(quote do: newSeq[Element]())
 
-proc tryAdd*(items: var seq[Element], widget: Element) =
-  ## Only adds a widget if it isn't nil
-  if widget != nil:
-    items.add(widget)
-
 proc findLoopVars(x: NimNode): seq[NimNode] =
   ## Returns a list of NimNodes that are variables in a loop
   case x.kind
@@ -453,6 +448,12 @@ proc findLoopVars(x: NimNode): seq[NimNode] =
     for child in x:
       result &= findLoopVars(x)
 
+proc genericType(container, T: NimNode): NimNode =
+  result = nnkBracketExpr.newTree(
+    container,
+    T
+  )
+
 proc processLoop(x: NimNode): NimNode =
   let
     itemsList = ident"items"
@@ -460,20 +461,20 @@ proc processLoop(x: NimNode): NimNode =
   let
     vars = findLoopVars(x[0])
     builderProc = genSym(nskProc, "builder")
-    body = loop[^1][0].processNode().newStmtList()
+    body = loop[^1].createElementList()
     # Build the proc that will get called each loop
     # This is so the closure stores the loop variable and makes it behave
     # as expected
     builder = newProc(builderProc, @[
-      ident"Element"
+      genericType(ident"seq", ident"Element"),
     ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = body)
   result = newStmtList()
 
   result &= nnkVarSection.newTree(
-    nnkIdentDefs.newTree(itemsList, nnkBracketExpr.newTree(ident"seq", ident"Element"), newEmptyNode())
+    nnkIdentDefs.newTree(itemsList, genericType(ident"seq", ident"Element"), newEmptyNode())
   )
   # Make the body just add items into the result
-  loop[^1] = newStmtList(builder, newCall("tryAdd", itemsList, builderProc.newCall(vars)))
+  loop[^1] = newStmtList(builder, newCall("add", itemsList, builderProc.newCall(vars)))
   result &= loop
   result &= itemsList
 
