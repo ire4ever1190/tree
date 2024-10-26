@@ -85,7 +85,7 @@ proc text*(val: Accessor[string]): Accessor[Node] {.effectsOf: val.} =
 # To support any expression being in the tree we have these
 # coerce calls to check if value can become an element and then
 # perform implicit conversion
-template coerceIntoElement(val: Node): Element =
+template coerceIntoElement(val: Node): Element {.callsite.} =
   ## For explicit conversion of Node into Element
   when val is Element: val else: Element(val)
 
@@ -103,6 +103,10 @@ template coerceIntoElement[T: void](val: T) =
   ## Doesn't convert into an Element, but allows support for
   ## statements within the GUI.
   ## e.g. echo "test", let x = 8
+  # Call the statement in case it might have side effects
+  val
+
+template coerceIntoElement(val: typeof(nil)): Element = Element(nil)
 
 template checkExpr*(val: typed): untyped {.callsite.} =
   ## Checks that the expression given can be converted into an element.
@@ -336,6 +340,8 @@ except:
 into
 ```
 let item = block:
+  # Needs to be a signal since the except clause could be called
+  # after the first render
   let (curr, setCurr) = createSignal[Element](nil)
   try:
     setCurr:
@@ -350,7 +356,7 @@ afterwards (Maybe some handler raises an exception)
 ]#
 
 proc processComp(x: NimNode): NimNode
-proc processIf(x: NimNode): NimNode
+proc processCondtional(x: NimNode): NimNode
 proc processLoop(x: NimNode): NimNode
 proc processCase(x: NimNode): NimNode
 proc processStmts(x: NimNode): NimNode
@@ -358,8 +364,8 @@ proc processTryExcept(x: NimNode): NimNode
 
 proc processNode(x: NimNode): NimNode =
   case x.kind
-  of nnkIfStmt:
-    x.processIf()
+  of nnkIfStmt, nnkWhenStmt:
+    x.processCondtional()
   of nnkCall, nnkCommand:
     x.processComp()
   of nnkForStmt, nnkWhileStmt:
@@ -376,28 +382,61 @@ proc processNode(x: NimNode): NimNode =
   of nnkTryStmt:
     x.processTryExcept()
   else:
-    x
+    # Everything else is an expression, so we must
+    # check its an Element
+    newCall("checkExpr", x)
 
 proc processStmts(x: NimNode): NimNode =
   result = newStmtList()
   for node in x:
     result &= node.processNode()
 
-proc processIf(x: NimNode): NimNode =
-  let ifStmt = nnkIfStmt.newTree()
-  for branch in x:
-    let rootCall = branch[^1][0].processNode()
-    branch[^1] = rootCall
-    ifStmt &= branch
-  # Make sure its an expression
-  if ifStmt[^1].kind != nnkElse:
-    ifStmt &= nnkElse.newTree(nilElement())
-  result = ifStmt
+proc deepCopyLineInfo(target, info: NimNode) =
+  ## Copies line info from `info` into `target` and all children of `target`.
+  ## Not really needed for normal code, but makes life easier when tracking down
+  ## DSL issues
+  target.copyLineInfo(info)
+  for child in target:
+    child.deepCopyLineInfo(info)
 
-proc tryAdd*(items: var seq[Element], widget: Element) =
-  ## Only adds a widget if it isn't nil
-  if widget != nil:
-    items.add(widget)
+proc createElementList(x: NimNode): NimNode =
+  ## Converts a list of expressions/statements into
+  ## a lsit of elements. This is used for blocks of code
+  ## that need to be conditionally rendered since then we can
+  ## easily teardown a list of elements
+  let res = genSym(nskVar, "elements")
+  x.expectKind(nnkStmtList)
+  result = newStmtList()
+  result &= newVarStmt(res, quote do: newSeq[Element]())
+  for elem in x:
+    let processed = elem.processNode()
+    let addStmt = quote do:
+      # We only want to append non void elements.
+      # `isnot void` doesn't work for discard statements
+      when compiles(`res` &= `processed`):
+        `res` &= `processed`
+      else:
+        `processed`
+    addStmt.deepCopyLineInfo(x)
+    result &= addStmt
+  # Turn the whole thing into an expression that returns the list
+  result &= res
+
+
+
+proc processCondtional(x: NimNode): NimNode =
+  ## Handles `if` and `when` expressions
+  # TODO: Have when be optimised as a statement
+  assert x.kind in {nnkIfStmt, nnkWhenStmt}
+  result = x.kind.newTree()
+  for branch in x:
+    let rootCall = branch[^1].createElementList()
+    branch[^1] = rootCall
+    result &= branch
+  # Must always be an expression so we must
+  # add an else branch if it doesnt exist
+  if result[^1].kind != nnkElse:
+    result &= nnkElse.newTree(quote do: newSeq[Element]())
 
 proc findLoopVars(x: NimNode): seq[NimNode] =
   ## Returns a list of NimNodes that are variables in a loop
@@ -409,6 +448,12 @@ proc findLoopVars(x: NimNode): seq[NimNode] =
     for child in x:
       result &= findLoopVars(x)
 
+proc genericType(container, T: NimNode): NimNode =
+  result = nnkBracketExpr.newTree(
+    container,
+    T
+  )
+
 proc processLoop(x: NimNode): NimNode =
   let
     itemsList = ident"items"
@@ -416,20 +461,20 @@ proc processLoop(x: NimNode): NimNode =
   let
     vars = findLoopVars(x[0])
     builderProc = genSym(nskProc, "builder")
-    body = loop[^1][0].processNode().newStmtList()
+    body = loop[^1].createElementList()
     # Build the proc that will get called each loop
     # This is so the closure stores the loop variable and makes it behave
     # as expected
     builder = newProc(builderProc, @[
-      ident"Element"
+      genericType(ident"seq", ident"Element"),
     ] & vars.mapIt(newIdentDefs(it, ident("typeof").newCall(it))), body = body)
   result = newStmtList()
 
   result &= nnkVarSection.newTree(
-    nnkIdentDefs.newTree(itemsList, nnkBracketExpr.newTree(ident"seq", ident"Element"), newEmptyNode())
+    nnkIdentDefs.newTree(itemsList, genericType(ident"seq", ident"Element"), newEmptyNode())
   )
   # Make the body just add items into the result
-  loop[^1] = newStmtList(builder, newCall("tryAdd", itemsList, builderProc.newCall(vars)))
+  loop[^1] = newStmtList(builder, newCall("add", itemsList, builderProc.newCall(vars)))
   result &= loop
   result &= itemsList
 
@@ -437,15 +482,10 @@ proc processCase(x: NimNode): NimNode =
   x.expectKind(nnkCaseStmt)
   result = nnkCaseStmt.newTree(x[0])
   for branch in x[1..^1]: # Ignore first item
-    let expr = branch[^1]
-    if expr.kind == nnkStmtList and expr[0].kind == nnkDiscardStmt:
-      # Discard could have side effects, so still call it but make it
-      # into an expression that returns nil
-      branch[^1] = newStmtList(expr[0], nilElement())
-    else:
-      let rootCall = branch[^1].processNode()
-      branch[^1] = rootCall
+    branch[^1] = branch[^1].createElementList()
     result &= branch
+  # We don't add an else branch since that would break safety
+  # of checking all cases
 
 proc processTryExcept(x: NimNode): NimNode =
   x.expectKind(nnkTryStmt)
@@ -490,6 +530,7 @@ proc processComp(x: NimNode): NimNode =
   let
     widget = ident("widget")
     compGen = newStmtList(newLetStmt(widget, init))
+  widget.copyLineInfo(x)
   # Native elements need each property to be assigned
   # Non native elements need the props passed to the call
   if native:
@@ -528,16 +569,12 @@ proc processComp(x: NimNode): NimNode =
     compGen.add quote do:
       var `lastWidget`: ElementMemo = nil
     for child in children:
-      # TODO: Why don't I optimise complex statements?
-      let body = if not hasComplexStmt:
-          child.processNode().tryElideMemo()
-        else:
-          child.processNode().wrapMemo()
-      # Make sure the child element can actually be an element.
-      # This allows us to give better error messages
-      let checkCall = newCall("checkExpr", body)
-      checkCall.copyLineInfo(body)
-      let insertCall = newCall(ident"insert", widget, checkCall, nnkExprEqExpr.newTree(ident"prev", lastWidget))
+      let
+        processed = child.processNode()
+        # TODO: Why don't I optimise complex statements?
+        body = if not hasComplexStmt: processed.tryElideMemo()
+               else: processed.wrapMemo()
+      let insertCall = newCall(ident"insert", widget, body, nnkExprEqExpr.newTree(ident"prev", lastWidget))
       if hasComplexStmt:
         compGen &= nnkAsgn.newTree(lastWidget, insertCall)
       else:

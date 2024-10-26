@@ -19,11 +19,18 @@ when defined(js):
         else:
           p(id="whenFalse"):
             "Its false"
-
+        # Test that they act like a block
+        if true:
+          p(id="block1"): "This is shown"
+          p(id="block2"): "This too"
+        # Check whens statements run.
+        # didn't feel like making a full test
+        when true:
+          p(id="whenBlock"): "When block was rendered"
   App.renderTo("root")
 
 else:
-  import utils
+  import utils, std/strutils
 
   proc tests*(d: FirefoxDriver) {.async.} =
     template testForState(state: bool) =
@@ -40,3 +47,14 @@ else:
     # Check they can handle cleaning up after
     await d.selectorClick("#btnFlip")
     testForState(false)
+
+    test "Block is shown":
+      check d.selectorText("#block1").await() == "This is shown"
+      check d.selectorText("#block2").await() == "This too"
+
+    # Bug where nil elements were rendered as null instead of not getting shown
+    test "No Null":
+      check "null" notin d.selectorText("div").await()
+
+    test "When block is rendered":
+      check d.selectorText("#whenBlock").await() == "When block was rendered"

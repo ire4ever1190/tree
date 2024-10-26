@@ -65,6 +65,11 @@ when defined(js):
           p:
             text "Not Loop"
 
+        tdiv(id="multipleChildren"):
+          for i in countup(0, number()):
+            p(id=cstring "child-" & $i): text"The count is"
+            p(id=cstring "child-num-" & $i): $i
+
   App.renderTo("root")
 
 else:
@@ -124,18 +129,27 @@ else:
       # Check it handles rerender properly
       checkText()
 
+    template incCount() = await d.selectorClick("#btnInc")
+    template decCount() = await d.selectorClick("#btnDec")
+
     makeTestBatch(3)
-    await d.selectorClick("#btnInc")
+    incCount()
     # Test the loops can properly expand
     makeTestBatch(4)
-    await d.selectorClick("#btnDec")
-    await d.selectorClick("#btnDec")
+    decCount()
+    decCount()
     # and shrink
     makeTestBatch(2)
     # and handle nothing
-    await d.selectorClick("#btnDec")
-    await d.selectorClick("#btnDec")
+    decCount()
+    decCount()
     makeTestBatch(0)
     # And handle coming back from nothing
     await d.selectorClick("#btnInc")
     makeTestBatch(1)
+    incCount()
+
+    test "All children in loop are shown":
+      for i in 0..<3:
+        check d.selectorText("#child-" & $i).await() == "The count is"
+        check d.selectorText("#child-num-" & $i).await() == $i
