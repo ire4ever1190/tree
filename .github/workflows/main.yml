@@ -69,16 +69,7 @@ jobs:
       - name: "Build documentation"
         uses: ire4ever1190/nim-docs-action@v1
         with:
+          deploy: "pages"
           main-file: "src/tree.nim"
           extra-files: "examples/exceptions.nim examples/overview.nim"
-
-      # Temp while the repo is private
-      # TODO: Use github pages
-      - name: "Deploy to netlify"
-        run: |
-          zip -r site.zip site/*
-          curl \
-            https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_ID }}/deploys \
-            -H "Authorization: Bearer ${{ secrets.NETLIFY_TOKEN }}" \
-            -H "Content-Type: application/zip" \
-            -XPOST --data-binary "@site.zip"
+          
