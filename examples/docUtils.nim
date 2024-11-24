@@ -102,14 +102,13 @@ macro example*(body: untyped): untyped =
   ## This is like runnableExamples, except it runs on the users browser
   # TODO: Should I run the code in an iFrame?
   # Find the portion of code that corresponds to the example
-  let info = body.lineInfoObj
-
   let
+    info = body.lineInfoObj
     fileName = info.filename.splitFile().name
     tempFile = makeTempFile(filename)
-  let output = body.readCode()
-  let
-    jsFile = (querySetting(outDir).Path / tempFile.splitPath().tail).changeFileExt("js")
+    output = body.readCode()
+    # Set the output to correctly be placed beside the source file
+    jsFile = (querySetting(outDir).Path / Path"examples" / tempFile.splitPath().tail).changeFileExt("js")
     divName = "exampleDiv" & $counter.value
   writeFile(tempFile.string, output & fmt"""
 # Extra code to actual render it
