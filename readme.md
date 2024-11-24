@@ -2,6 +2,8 @@
 
 [![Tests](https://github.com/ire4ever1190/tree/actions/workflows/main.yml/badge.svg)](https://github.com/ire4ever1190/tree/actions/workflows/main.yml)
 
+[Docs](https://ire4ever1190.github.io/tree/theindex.html)
+
 Frontend framework based on signals. It's in the early stages, but it is usable. Don't expect a stable API at the moment.
 
 ## Overview
