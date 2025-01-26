@@ -43,6 +43,7 @@ registerElement("img", ImgElement)
 registerElement("fieldset", BaseElement)
 registerElement("legend", BaseElement)
 # Form elements
+registerElement("form", FormElement)
 registerElement("input", InputElement)
 registerElement("select", BaseElement)
 registerElement("option", OptionElement)
