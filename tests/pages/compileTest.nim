@@ -8,6 +8,8 @@ when defined(js):
       tdiv(id="tupleLoop"):
         for (a, b) in [(1, 2), (3, 4)]:
           p: fmt"{a} | {b}"
+  App.renderTo("root")
+
 else:
   import utils
   import std/strformat
