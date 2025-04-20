@@ -54,6 +54,8 @@ when defined(js):
             p(class="item-3", style="color: blue"):
               text($i)
 
+
+
         # Test that when it rerenders, the loops don't go last
         # Can happen if prev() is wrong and returns nil when it shouldn't
         tdiv(id="prevNotLoop"):
