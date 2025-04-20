@@ -440,14 +440,15 @@ proc processCondtional(x: NimNode): NimNode =
     result &= nnkElse.newTree(quote do: newSeq[Element]())
 
 proc findLoopVars(x: NimNode): seq[NimNode] =
-  ## Returns a list of NimNodes that are variables in a loop
+  ## Returns a list of NimNodes that are variables in a loop.
+  ## e.g. `for a in someList` will return `a`
   case x.kind
   of nnkIdent:
     result &= x
   else:
     # TODO: Add proper checks before this explodes in our face
     for child in x:
-      result &= findLoopVars(x)
+      result &= findLoopVars(child)
 
 proc genericType(container, T: NimNode): NimNode =
   result = nnkBracketExpr.newTree(

@@ -66,6 +66,7 @@ testFile "Text Elements", "text.nim"
 testFile "For Loops", "forLoop.nim"
 testFile "If Expressions", "ifExpr.nim"
 testFile "Case Expressions", "caseExpr.nim"
+testFile "Compilation bugs", "compileTest.nim"
 
 # Clean up
 waitFor driver.close()
