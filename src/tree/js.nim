@@ -444,7 +444,8 @@ proc findLoopVars(x: NimNode): seq[NimNode] =
   ## e.g. `for a in someList` will return `a`
   case x.kind
   of nnkIdent:
-    result &= x
+    if not x.eqIdent("_"):
+      result &= x
   else:
     # TODO: Add proper checks before this explodes in our face
     for child in x:
