@@ -5,17 +5,18 @@ when defined(js):
 
   proc App(): Element =
     gui:
-      tdiv(id="tupleLoop"):
-        for (a, b) in [(1, 2), (3, 4)]:
-          p: fmt"{a} | {b}"
+      tdiv:
+        tdiv(id="tupleLoop"):
+          for (a, b) in [(1, 2), (3, 4)]:
+            p: fmt"{a} | {b}"
 
-      tdiv(id="specialIdent"):
-        for _ in [1, 2, 3]:
-          p: "test"
+        tdiv(id="specialIdent"):
+          for _ in [1, 2, 3]:
+            p: "test"
 
-      tdiv(id="specialIdentTuple"):
-        for (a, _) in [(1, 2), (3, 4)]:
-          p: fmt"{a}"
+        tdiv(id="specialIdentTuple"):
+          for (a, _) in [(1, 2), (3, 4)]:
+            p: fmt"{a}"
 
   App.renderTo("root")
 
