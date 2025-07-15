@@ -8,15 +8,15 @@ type
     href*: cstring
 
   ButtonElement* {.importc.} = ref object of BaseElement
-    autofocus: bool
-    formaction: cstring
-    formenctype: cstring
-    formmethod: cstring
-    formnovalidate: bool
-    formtarget: cstring
+    autofocus*: bool
+    formaction*: cstring
+    formenctype*: cstring
+    formmethod*: cstring
+    formnovalidate*: bool
+    formtarget*: cstring
     # TODO: popover stuff
-    `type`: cstring
-    value: cstring
+    `type`*: cstring
+    value*: cstring
 
   ImgElement* {.importc.} = ref object of ImageElement
     loading*: cstring
